@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings>
+    <category label="Categories">
+        <setting id="list_limit" type="enum" default="3" values="10|25|50|75|100" label="Max number of cams per page" />
+        <setting id="sort_by" type="enum" default="1" values="Ranking|Trending" label="Sort cam listing by ranking or trending" help="VIEWERS" />
+    </category>
+    <category label="Favourites">
+        <setting id="fav_check_online_status" type="bool" default="true" label="Check online status (off = faster listing, less infos)"/>
+        <setting id="fav_default_icon" type="bool" default="true" label="Show status icons instead of avatar for not public cams"/>
+        <setting id="fav_path_backup" type="folder" source="files" option="writeable" default="" label="Backup/Restore path (file manager sources)"/>
+        <setting id="fav_backup" type="action" label="Backup favourites" enable="true" option="close" action="RunPlugin(plugin://plugin.video.sc19/?tool=fav-backup)" />
+        <setting id="fav_restore" type="action" label="Restore favourites" enable="true" option="close" action="RunPlugin(plugin://plugin.video.sc19/?tool=fav-restore)" />
+    </category>
+    <category label="Profile info">
+        <setting id="ctx_show_all_albums" type="bool" default="true" label="Context menu - List restricted albums as well (just for info)"/>
+        <setting id="ctx_show_all_videos" type="bool" default="true" label="Context menu - List restricted videos as well (trailer only)"/>
+    </category>
+</settings>
