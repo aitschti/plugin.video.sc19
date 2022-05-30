@@ -18,4 +18,8 @@ Tested on Android (Fire TV) and Windows. Not available in a kodi repository, so 
 - "Info wall" is the recommended view for listings as you get a little more details about the cam
 
 ## Todo
-- multi language (enlish only for the moment)
+- multi language (english only for the moment)
+
+Hope you enjoy!
+
+(A version for chaturbate with similar features to be released soon)
