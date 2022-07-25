@@ -289,8 +289,8 @@ def get_favourites():
                     else:
                         li.setArt({'icon': data["user"]["user"]["avatarUrl"], 'fanart': data["user"]["user"]['previewUrl']})
                 else:
-                    #SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
-                    snap = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp".format(data["user"]["user"]['snapshotServer'],data["user"]["user"]['snapshotTimestamp'],data["user"]["user"]['id'])
+                    #SNAPSHOT_IMAGE = "https://img.strpst.com/thumbs/{0}/{1}_webp"
+                    snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(data["user"]["user"]['snapshotTimestamp'],data["user"]["user"]['id'])
                     li.setArt({'icon': snap, 'thumb': snap, 'fanart': data["user"]["user"]['previewUrl']})
             
                 # Tag info
@@ -980,8 +980,8 @@ def get_cam_infos_as_items(cams):
         if not item['status'] == "offfff":
             username = item['username']
             
-            icon = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp".format(item['snapshotServer'],item['snapshotTimestamp'],item['id'])
-        
+            icon = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(item['snapshotTimestamp'],item['id'])
+            xbmc.log("ICON for " + username + ": " + icon, 1)
             url = sys.argv[0] + '?playactor=' + username
             #xbmc.log("SC19: " + url,1)
             li = xbmcgui.ListItem(username)
