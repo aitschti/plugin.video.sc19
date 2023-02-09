@@ -18,6 +18,12 @@ ADDON_SHORTNAME = "SC19"
 BASE_DIR = os.path.dirname(__file__)
 DB_FAVOURITES_FILE = "favourites-sc.db"
 DB_FAVOURITES = xbmcvfs.translatePath("special://profile/addon_data/%s/%s" % (ADDON_NAME, DB_FAVOURITES_FILE))
+DB_TEXTURES = xbmcvfs.translatePath("special://userdata/Database/Textures13.db")
+PATH_THUMBS = xbmcvfs.translatePath("special://userdata/Thumbnails/")
+
+# Queries
+Q_THUMBNAILS = "SELECT url,cachedurl FROM texture WHERE url LIKE '%.strpst.com%'"
+Q_DEL_THUMBNAILS = "DELETE FROM texture WHERE url LIKE '%.strpst.com%'"
 
 # Addon init
 PLUGIN_ID = int(sys.argv[1])
@@ -50,6 +56,7 @@ LIST_LIMIT = LIST_LIMITS[ADDON.getSettingInt('list_limit')]
 SORT_BY_OPTIONS = ["stripRanking", "trending"]
 SORT_BY_STD = SORT_BY_OPTIONS[ADDON.getSettingInt('sort_by')]
 PRIMARY_TAG = "girls"
+DEL_THUMBS_ON_STARTUP = ADDON.getSettingBool('del_thumbs_on_startup')
 
 USER_STATES = {
     'public' : '',
@@ -105,8 +112,8 @@ SITE_CATS_C     = (('All', "category/couples", ""),
 SITE_CATS_T     = (('All', "category/trans", ""),
                    ("New cams", "category/trans/autoTagNew", ""))
 SITE_TOOLS = (("Backup Favourites", "tool=fav-backup", "Backup favourites (Set backup location in settings first). \nExisting favourites file will be overwritten without warning."),
-              ("Restore Favourites", "tool=fav-restore", "Restore your favourites from backup location."))
-#("Clean thumbnails", "tool=clean-thumbnails", "Clean database from stripchat related thumbnails.")
+              ("Restore Favourites", "tool=fav-restore", "Restore your favourites from backup location."),
+              ("Delete Thumbnails", "tool=thumbnails-delete", "Delete cached stripchat related thumbnail files and database entries."))
 
 # Strings
 STRINGS = {
@@ -118,7 +125,7 @@ STRINGS = {
 
 def evaluate_request():
     """Evaluate what has been picked in Kodi"""
-
+    
     if sys.argv[2]:
         param = sys.argv[2]
         
@@ -138,9 +145,11 @@ def evaluate_request():
         elif "tool=" in param:
             tool = re.findall(r'\?tool=(.*)', param)[0]
             if tool == "fav-backup":
-                tool_fav_backup();
+                tool_fav_backup()
             if tool == "fav-restore":
                 tool_fav_restore()
+            if tool == "thumbnails-delete":
+                tool_thumbnails_delete()
         elif "category" in param:
             get_cams_by_category()
         elif "playactor=" in param:
@@ -242,6 +251,10 @@ def get_profile_data(item):
 
 def get_favourites():
     """Get list of favourites from addon's db"""    
+    
+    # Clean Thumbnails before opening the list
+    if DEL_THUMBS_ON_STARTUP:
+        tool_thumbnails_delete2()
 
     # Connect to favourites db
     db_con = connect_favourites_db()
@@ -403,7 +416,7 @@ def get_cams_by_category():
         offset = int(paras[2])
 
     url = API_ENDPOINT_MODELS_FILTER.format(limit, offset, primaryTag, filterGroupTags, sortBy)
-    #xbmc.log("URL: " + url, 1)
+    xbmc.log("URL: " + url, 1)
 
     try:
         data = get_site_page_full(url)
@@ -441,6 +454,7 @@ def get_cams_by_category():
             li.setInfo('video', {'sorttitle': str(999).zfill(2) + " - Next Page"})
             li.setInfo('video', {'count': str(-1)})
             li.setInfo('video', {'plot': "Total cams: " + str(filteredCount)})
+            xbmc.log("NEXT PAGE URL: " + sys.argv[0] + '?'+nextpageurl, 1)
             items.append((sys.argv[0] + '?'+nextpageurl, li, False))
             
         # Put items to virtual directory listing and set sortings
@@ -971,6 +985,9 @@ def get_prices_string_for_plot(item):
     return s + s2
 
 def get_cam_infos_as_items(cams):
+    # Clean Thumbnails before opening the list
+    if DEL_THUMBS_ON_STARTUP:
+        tool_thumbnails_delete2()
         
     # Build kodi list items for virtual directory
     items = []
@@ -981,7 +998,7 @@ def get_cam_infos_as_items(cams):
             username = item['username']
             
             icon = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(item['snapshotTimestamp'],item['id'])
-            xbmc.log("ICON for " + username + ": " + icon, 1)
+            #xbmc.log("ICON for " + username + ": " + icon, 1)
             url = sys.argv[0] + '?playactor=' + username
             #xbmc.log("SC19: " + url,1)
             li = xbmcgui.ListItem(username)
@@ -1016,6 +1033,7 @@ def get_ctx_for_cam_item(username, remove=False):
         commands.append(('[COLOR orange]' + ADDON_SHORTNAME + ' - Remove favourite [/COLOR]','RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', remove_favourite, ' + username + ')'))
     else:
         commands.append(('[COLOR orange]' + ADDON_SHORTNAME + ' - Add as favourite [/COLOR]','RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', add_favourite, ' + username + ')'))
+    commands.append(('[COLOR orange]' + ADDON_SHORTNAME + ' - Refresh thumbnails [/COLOR]','RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', ctx_thumbnails_delete)'))
     # Profile info
     commands.append(('Show profile albums',"Container.Update(%s?%s)" % ( sys.argv[0],  "getalbums=" + username)))
     commands.append(('Show profile videos',"Container.Update(%s?%s)" % ( sys.argv[0],  "getvideos=" + username)))
@@ -1042,6 +1060,39 @@ def get_icon_from_status(status):
     elif status == "off":
         icon = ART_FOLDER + 'icon-off.png' 
     return icon
+
+def tool_thumbnails_delete():
+    rc = tool_thumbnails_delete2()
+    # Summary dialog
+    xbmcgui.Dialog().ok("Delete Thumbnails", "Deleted %s thumbnail files and database entries" % (str(rc)))
+
+def tool_thumbnails_delete2():   
+    # Connect to textures db
+    conn = sqlite3.connect(DB_TEXTURES)
+    # Set cursors
+    cur = conn.cursor()
+    cur_del = conn.cursor()
+    # Delete thimbnail files
+    cur.execute(Q_THUMBNAILS)
+    rc = 0
+    rows = cur.fetchall()
+    for row in rows:
+        rc = rc + 1
+        #xbmc.log("Thumb: " + PATH_THUMBS + str(row[1]),1)
+        if os.path.exists(PATH_THUMBS + str(row[1])):
+            os.remove(PATH_THUMBS + str(row[1]))
+            #xbmc.log("The file has been successfully deleted.",1)
+        else:
+            #xbmc.log("The file does not exist.",1)
+            pass
+    # Delete entries from db
+    cur_del.execute(Q_DEL_THUMBNAILS)
+    conn.commit()
+    # Close connection
+    conn.close()
+    # Return number of entries found and log
+    xbmc.log(ADDON_SHORTNAME + ": Deleted %s thumbnail files and database entries" % (str(rc)),1)
+    return rc
 
 if __name__ == "__main__":
     evaluate_request()

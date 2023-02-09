@@ -15,4 +15,7 @@
         <setting id="ctx_show_all_albums" type="bool" default="true" label="Context menu - List restricted albums as well (just for info)"/>
         <setting id="ctx_show_all_videos" type="bool" default="true" label="Context menu - List restricted videos as well (trailer only)"/>
     </category>
+    <category label="Thumbnails">
+        <setting id="del_thumbs_on_startup" type="bool" default="false" label="Delete thumbnails every time you open a list"/>
+    </category>
 </settings>

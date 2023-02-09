@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.sc19" version="0.1.0" name="SC19" provider-name="aitschti">
+<addon id="plugin.video.sc19" version="0.2.0" name="SC19" provider-name="aitschti">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
     </requires>
@@ -13,7 +13,7 @@
     <extension point="xbmc.addon.metadata">
         <platform>all</platform>
         <news>
-[0.1.0] - Initial version
+All changes on GitHub: https://github.com/aitschti/plugin.video.sc19
         </news>
         <assets>
             <icon>resources/icon.png</icon>
@@ -24,12 +24,12 @@
         <forum></forum>
         <website></website>
         <email>last5mins@yandex.com</email>
-        <summary lang="en_GB">Stripchat for Kodi 19+</summary>
-        <summary lang="de_DE">Stripchat für Kodi 19+</summary>
-        <description lang="en_GB">Stripchat streaming for Kodi 19+</description>
-        <description lang="de_DE">Stripchat streaming für Kodi 19+</description>
-        <disclaimer lang="en_GB">(c) 2022 aitschti</disclaimer>
-        <disclaimer lang="de_DE">(c) 2022 aitschti</disclaimer>
+        <summary lang="en_GB">Stripchat for Kodi 19/20</summary>
+        <summary lang="de_DE">Stripchat für Kodi 19/20</summary>
+        <description lang="en_GB">Stripchat streaming for Kodi 19/20</description>
+        <description lang="de_DE">Stripchat streaming für Kodi 19/20</description>
+        <disclaimer lang="en_GB">(c) 2023 aitschti</disclaimer>
+        <disclaimer lang="de_DE">(c) 2023 aitschti</disclaimer>
         <reuselanguageinvoker>false</reuselanguageinvoker>
     </extension>
 </addon>

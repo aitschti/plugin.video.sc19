@@ -9,6 +9,12 @@ import xbmcplugin
 ADDON_NAME = "plugin.video.sc19"
 DB_FAVOURITES_FILE = "favourites-sc.db"
 DB_FAVOURITES = xbmcvfs.translatePath("special://profile/addon_data/%s/%s" % (ADDON_NAME, DB_FAVOURITES_FILE))
+DB_TEXTURES = xbmcvfs.translatePath("special://userdata/Database/Textures13.db")
+PATH_THUMBS = xbmcvfs.translatePath("special://userdata/Thumbnails/")
+
+# Queries
+Q_THUMBNAILS = "SELECT url,cachedurl FROM texture WHERE url LIKE '%.strpst.com%'"
+Q_DEL_THUMBNAILS = "DELETE FROM texture WHERE url LIKE '%.strpst.com%'"
 
 xbmc.log(ADDON_NAME + ": " + str(sys.argv), 1)
 #xbmcgui.Dialog().ok("OFFLINE", "The user is currently offline. Please try again later.")
@@ -80,6 +86,31 @@ def remove_favourite(user):
     except sqlite3.IntegrityError:
         pass
 
+
+def ctx_thumbnails_delete():   
+    # Connect to textures db
+    conn = sqlite3.connect(DB_TEXTURES)
+    # Set cursors
+    cur = conn.cursor()
+    cur_del = conn.cursor()
+    # Delete thimbnail files
+    cur.execute(Q_THUMBNAILS)
+    rc = 0
+    rows = cur.fetchall()
+    for row in rows:
+        rc = rc + 1
+        if os.path.exists(PATH_THUMBS + str(row[1])):
+            os.remove(PATH_THUMBS + str(row[1]))
+    # Delete entries from db
+    cur_del.execute(Q_DEL_THUMBNAILS)
+    conn.commit()
+    # Close connection
+    conn.close()
+    # Return number of entries found and log
+    xbmc.log("Deleted %s thumbnail files and database entries" % (str(rc)),1)
+    return rc
+
+
 if sys.argv[2]:
     cmd = sys.argv[2]
     if cmd == "refresh":
@@ -88,4 +119,7 @@ if sys.argv[2]:
         add_favourite(sys.argv[3])
     if cmd == "remove_favourite":
         remove_favourite(sys.argv[3])
+        xbmc.executebuiltin("Container.Refresh")
+    if cmd == "ctx_thumbnails_delete":
+        ctx_thumbnails_delete()
         xbmc.executebuiltin("Container.Refresh")
