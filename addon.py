@@ -730,11 +730,6 @@ def play_actor(actor, genre="Stripchat"):
         data = get_site_page_full(url)
         data = json.loads(data)
         
-        # Check for user not found
-        if data["error"] == "Not Found":
-            xbmcgui.Dialog().ok("Info", STRINGS['not_found'])
-            return
-        
         # Check for deactivated account
         if not data["cam"]:
             xbmcgui.Dialog().ok("Info", STRINGS['deactivated'])
