@@ -11,6 +11,7 @@ import re
 import urllib.request
 import urllib.parse
 import urllib.error
+import socket
 
 # Config constants
 ADDON_NAME = "plugin.video.sc19"
@@ -57,6 +58,7 @@ SORT_BY_OPTIONS = ["stripRanking", "trending"]
 SORT_BY_STD = SORT_BY_OPTIONS[ADDON.getSettingInt('sort_by')]
 PRIMARY_TAG = "girls"
 DEL_THUMBS_ON_STARTUP = ADDON.getSettingBool('del_thumbs_on_startup')
+REQUEST_TIMEOUT = ADDON.getSettingInt('request_timeout')
 
 USER_STATES = {
     'public' : '',
@@ -120,7 +122,9 @@ STRINGS = {
     'na' : 'User is not available',
     'last_status' : 'Last status: ',
     'unknown_status' : 'Unkown status: ',
-    'not_live' : 'User is not live at the moment'
+    'not_live' : 'User is not live at the moment',
+    'not_found' : 'Account not found. It may have been deleted.',
+    'deactivated' : 'This account is deactivated'
 }
 
 def evaluate_request():
@@ -420,7 +424,6 @@ def get_cams_by_category():
 
     try:
         data = get_site_page_full(url)
-        data = data.decode('utf-8')
         cams = json.loads(data)
         
         # result for category has a filteredCount value
@@ -723,8 +726,19 @@ def play_actor(actor, genre="Stripchat"):
     try:
         # Fetch and store HTML
         url = API_ENDPOINT_MODEL.format(actor)       
+        #xbmc.log("URL to play: " + url, 1)
         data = get_site_page_full(url)
         data = json.loads(data)
+        
+        # Check for user not found
+        if data["error"] == "Not Found":
+            xbmcgui.Dialog().ok("Info", STRINGS['not_found'])
+            return
+        
+        # Check for deactivated account
+        if not data["cam"]:
+            xbmcgui.Dialog().ok("Info", STRINGS['deactivated'])
+            return
         
         bio = ""
         
@@ -756,7 +770,6 @@ def play_actor(actor, genre="Stripchat"):
             
         # Extract playlist
         pl = hls_source
-        #xbmc.log("URL: " + str(pl),1)
     
         # Bio stats
         if not data["cam"]["goal"] == None:
@@ -786,7 +799,7 @@ def play_actor(actor, genre="Stripchat"):
 
 
 def get_site_page(page):
-    """Fetch HTML data from site"""
+    """Fetch HTML data from site (old variant)"""
 
     url = "%s/%s" % (SITE_URL, page)
     xbmc.log("URL: " + url, 1)
@@ -807,7 +820,11 @@ def get_site_page_full(page):
     req.add_header('User-Agent', USER_AGENT)
     req.add_header('Accept', SITE_ACCEPT)
     
-    return urllib.request.urlopen(req).read()
+    response = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
+    if response.getcode() != 200:
+        xbmc.log(ADDON_SHORTNAME + ": Request failed with code " + response.getcode())
+    
+    return response.read().decode('utf-8')    
 
 def search_actor():
     """Search for actor/username and list item if username exists"""
@@ -818,7 +835,7 @@ def search_actor():
     else:
         data = {}
         # Prepare request
-        url = "https://stripchat.com/api/front/v2/models/username/{0}/cam".format(s) 
+        url = API_ENDPOINT_MODEL.format(s) 
         try:
             data = get_site_page_full(url)
             data = json.loads(data)

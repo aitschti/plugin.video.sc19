@@ -18,4 +18,7 @@
     <category label="Thumbnails">
         <setting id="del_thumbs_on_startup" type="bool" default="false" label="Delete thumbnails every time you open a list"/>
     </category>
+    <category label="Scraper">
+        <setting id="request_timeout" type="slider" label="Request Timeout - Time to wait for the response of a request" option="int" range="1,1,30" default="5" />
+    </category>
 </settings>
