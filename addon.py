@@ -434,10 +434,10 @@ def get_cams_by_category():
         else:
             filteredCount = cams['totalCount']
             totalCount = cams['totalCount']
-        #xbmc.log("MARKER1",1)
+
         # Build kodi list items for virtual directory
         items = get_cam_infos_as_items(cams)
-        #xbmc.log("MARKER2",1)    
+
         # Pagination
         newOffset = offset + LIST_LIMIT
         if newOffset < filteredCount:
@@ -458,7 +458,7 @@ def get_cams_by_category():
             li.setInfo('video', {'count': str(-1)})
             li.setInfo('video', {'plot': "Total cams: " + str(filteredCount)})
             xbmc.log("NEXT PAGE URL: " + sys.argv[0] + '?'+nextpageurl, 1)
-            items.append((sys.argv[0] + '?'+nextpageurl, li, False))
+            items.append((sys.argv[0] + '?'+nextpageurl, li, True))
             
         # Put items to virtual directory listing and set sortings
         put_virtual_directoy_listing(items)
