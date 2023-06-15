@@ -741,8 +741,10 @@ def play_actor(actor, genre="Stripchat"):
         if not data["cam"]["topic"] == "":
             bio = "Topic: " + data["cam"]["topic"] + "\n"
         
-        # hls_source = "https://b-{0}.doppiocdn.com/hls/{1}/master/{1}_auto.m3u8".format(data["cam"]["viewServers"]["flashphoner-hls"],data["cam"]["streamName"])
-        hls_source = "https://b-{0}.doppiocdn.com/hls/{1}/{1}.m3u8".format(data["cam"]["viewServers"]["flashphoner-hls"],data["cam"]["streamName"])
+        # alternative without resolution variants: hls_source = "https://b-{0}.doppiocdn.com/hls/{1}/{1}.m3u8".format(data["cam"]["viewServers"]["flashphoner-hls"],data["cam"]["streamName"])
+        # variants hls_source = "https://edge-hls.doppiocdn.com/hls/{0}/master/{0}_auto.m3u8".format(data["cam"]["streamName"])
+        # best only hls_source = "https://edge-hls.doppiocdn.com/hls/{0}/master/{0}.m3u8".format(data["cam"]["streamName"])
+        hls_source = "https://edge-hls.doppiocdn.com/hls/{0}/master/{0}.m3u8".format(data["cam"]["streamName"])
         
         status = data["user"]["user"]["status"]
         
