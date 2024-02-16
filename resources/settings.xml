@@ -21,4 +21,7 @@
     <category label="Scraper">
         <setting id="request_timeout" type="slider" label="Request Timeout - Time to wait for the response of a request" option="int" range="1,1,30" default="5" />
     </category>
+    <category label="Cams">
+        <setting id="stream_player" type="enum" values="Default|InputStream FFmpegDirect" default="1" label="Stream player engine" />
+    </category>
 </settings>
