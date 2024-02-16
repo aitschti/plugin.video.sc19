@@ -1,6 +1,6 @@
 # plugin.video.sc19
 
-A kodi plugin for streaming cams from stripchat.com. Works with all kodi Matrix/Nexus releases (19 and 20)).
+A kodi plugin for streaming cams from stripchat.com. Works with all kodi releases 19, 20 and 21.
 
 Tested on Android (Fire TV) and Windows, should work fine with other Linux systems. Not available in a kodi repository, so use "Install from ZIP" in kodi and point to the zip file to install.
 
