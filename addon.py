@@ -667,6 +667,16 @@ def play_url(url, title):
     li = xbmcgui.ListItem(str("Profile Video"))
     li.setInfo('video', {'Title' : title, "Genre" : "Profile Video", "Plot" : title})
     li.setLabel(title)
+    
+    # Get stream player setting
+    stream_player = xbmcaddon.Addon().getSetting('stream_player')
+    # Set inputstream addon based on setting
+    if stream_player == "0":
+        xbmc.log(ADDON_SHORTNAME + ": " + "Using default stream player", 1)
+    if stream_player == "1":
+        li.setProperty('inputstream', 'inputstream.ffmpegdirect')
+        xbmc.log(ADDON_SHORTNAME + ": " + "Using InputStream FFmpegDirect", 1)
+    
     xbmc.Player().play(url,li)
     
 def show_picture(url):
@@ -788,7 +798,14 @@ def play_actor(actor, genre="Stripchat"):
         li.setArt({'icon': img})
    
         li.setMimeType('application/vnd.apple.mpegstream_url')
-
+        # Get stream player setting
+        stream_player = xbmcaddon.Addon().getSetting('stream_player')
+        # Set inputstream addon based on setting
+        if stream_player == "0":
+            xbmc.log(ADDON_SHORTNAME + ": " + "Using default stream player", 1)
+        if stream_player == "1":
+            li.setProperty('inputstream', 'inputstream.ffmpegdirect')
+            xbmc.log(ADDON_SHORTNAME + ": " + "Using InputStream FFmpegDirect", 1)
         # Play stream
         xbmc.Player().play(pl, li)
     
@@ -1067,7 +1084,7 @@ def get_icon_from_status(status):
     elif status == "virtualPrivate":
         icon = ART_FOLDER + 'icon-pvt.png'
     elif status == "groupShow":
-        icon = ART_FOLDER + 'icon-group.png'
+        icon = ART_FOLDER + 'icon-grp.png'
     elif status == "p2pVoice":
         icon = ART_FOLDER + 'icon-p2p.png'
     elif status == "idle":
