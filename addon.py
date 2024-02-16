@@ -45,7 +45,8 @@ API_ENDPOINT_MEMBERS = "https://stripchat.com/api/front/models/username/{0}/memb
 API_ENDPOINT_ALBUMS = "https://stripchat.com/api/front/users/username/{0}/albums"
 API_ENDPOINT_ALBUM = "https://stripchat.com/api/front/users/username/{0}/albums/{1}/photos"
 API_ENDPOINT_VIDEOS = "https://stripchat.com/api/front/users/username/{0}/videos"
-API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v3/models/search?query={0}&type=username"
+API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/username?query={0}&limit=100"
+# differentiated API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/all?query={0}&limit=100"
 SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
 
 # User agent(s)
@@ -89,7 +90,7 @@ SITE_MENU = (('Categories - Girls', "sitecat=cats-f", "Show girls cams only."),
              ("Favourites", "favourites", "Favourites list. Online status will be checked on opening the list."),
              ("Search", "search", "Search for an exact username.\nA little more info about than with fuzzy search."),
              ("Fuzzy search", "fuzzy", "List cams containing searchterm in username."),
-             ("Random 10", "random10", "Random 10 live models (girls)"),
+             ("Random 50", "randomx", "Random 50 live models (girls)"),
              ("Tools", "sitecat=tools", "Some tools for cleanup and favourites.")
              )
 SITE_CATS_F     = (("All", "category/girls", ""),
@@ -144,7 +145,7 @@ def evaluate_request():
             get_profile_data(re.findall(r'\?getProfile=(.*)', param)[0])
         elif "fuzzy" in param:
             search_actor2()
-        elif "random10" in param:
+        elif "randomx" in param:
             get_cams_from_json()
         elif "tool=" in param:
             tool = re.findall(r'\?tool=(.*)', param)[0]
@@ -347,7 +348,7 @@ def get_favourites():
     
 def get_cams_from_json():
     """List available cams by category"""
-    data = get_site_page_full('https://go.stripchat.com/api/models')
+    data = get_site_page_full('https://go.stripchat.com/api/models?limit=50')
     
     # JSON
     data = json.loads(data)
@@ -360,10 +361,10 @@ def get_cams_from_json():
         username = item['username']
         icon = item['snapshotUrl']
         #icon = item['avatarUrl']
-        if 'goalMessage' in item:
-            message = item['goalMessage']
-        else:
-            message = "n/a"
+        #if 'goalMessage' in item:
+        #    message = item['goalMessage']
+        #else:
+        #    message = "n/a"
         
         viewers = item['viewersCount']
         
@@ -376,9 +377,10 @@ def get_cams_from_json():
         li.setInfo('video', {'sorttitle': str(id).zfill(2) + " - " + username})
         id = id + 1
         li.setInfo('video', {
-                   'plot': "GOAL: " + message 
-                           + "\n"
-                           + "\nStatus: " + item['status']
+                   #'plot': "GOAL: " + message 
+                   #        + "\n"
+                   'plot': "Status: " + item['status']
+                   #        + "\nStatus: " + item['status']
                            + "\nViewers: " + str(viewers)
                            + "\nFavorited: " + str(item['favoritedCount'])
                            })
@@ -954,7 +956,6 @@ def search_actor2():
     xbmc.log("URL: " + url,1)
     try:
         data = get_site_page_full(url)
-        data = data.decode('utf-8')
         cams = json.loads(data)
         xbmc.log("CAMS: " + str(len(cams['models'])),1)
         
