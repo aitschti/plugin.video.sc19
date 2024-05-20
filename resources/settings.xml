@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <settings>
     <category label="Categories">
-        <setting id="list_limit" type="enum" default="3" values="10|25|50|75|100" label="Max number of cams per page" />
+        <setting id="list_limit" type="enum" default="3" values="10|25|50|75|99" label="Max number of cams per page" />
         <setting id="sort_by" type="enum" default="1" values="Ranking|Trending" label="Sort cam listing by ranking or trending" help="VIEWERS" />
     </category>
     <category label="Favourites">

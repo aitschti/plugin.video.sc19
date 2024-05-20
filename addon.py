@@ -45,7 +45,7 @@ API_ENDPOINT_MEMBERS = "https://stripchat.com/api/front/models/username/{0}/memb
 API_ENDPOINT_ALBUMS = "https://stripchat.com/api/front/users/username/{0}/albums"
 API_ENDPOINT_ALBUM = "https://stripchat.com/api/front/users/username/{0}/albums/{1}/photos"
 API_ENDPOINT_VIDEOS = "https://stripchat.com/api/front/users/username/{0}/videos"
-API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/username?query={0}&limit=100"
+API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/username?query={0}&limit=99"
 # differentiated API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/all?query={0}&limit=100"
 SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
 
@@ -53,7 +53,7 @@ SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
 USER_AGENT = " Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.182 Safari/537.36"
 
 # Site specific constants
-LIST_LIMITS = [10, 25, 50, 75, 100]
+LIST_LIMITS = [10, 25, 50, 75, 99]
 LIST_LIMIT = LIST_LIMITS[ADDON.getSettingInt('list_limit')]
 SORT_BY_OPTIONS = ["stripRanking", "trending"]
 SORT_BY_STD = SORT_BY_OPTIONS[ADDON.getSettingInt('sort_by')]
