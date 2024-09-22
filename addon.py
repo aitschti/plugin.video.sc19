@@ -131,50 +131,74 @@ STRINGS = {
 def evaluate_request():
     """Evaluate what has been picked in Kodi"""
     
-    if sys.argv[2]:
-        param = sys.argv[2]
-        
-        # Navigation by parameter
-        if "sitecat=" in param:
-            get_menu(re.findall(r'sitecat=(.*)', param)[0])
-        elif "favourites" in param:
-            get_favourites()
-        elif "search" in param:
-            search_actor()
-        elif "getProfile" in param:
-            get_profile_data(re.findall(r'\?getProfile=(.*)', param)[0])
-        elif "fuzzy" in param:
-            search_actor2()
-        elif "randomx" in param:
-            get_cams_from_json()
-        elif "tool=" in param:
-            tool = re.findall(r'\?tool=(.*)', param)[0]
-            if tool == "fav-backup":
-                tool_fav_backup()
-            if tool == "fav-restore":
-                tool_fav_restore()
-            if tool == "thumbnails-delete":
-                tool_thumbnails_delete()
-        elif "category" in param:
-            get_cams_by_category()
-        elif "playactor=" in param:
-            play_actor(re.findall(r'\?playactor=(.*)', param)[0])
-        elif "getalbums=" in param:
-            get_albums(re.findall(r'\?getalbums=(.*)', param)[0])
-        elif "getvideos=" in param:
-            get_videos(re.findall(r'\?getvideos=(.*)', param)[0])
-        elif "getalbum=" in param:
-            get_album(re.findall(r'\?getalbum=(.*)&', param)[0], re.findall(r'&id=(.*)', param)[0])
-        elif "playurl=" in param:
-            play_url(re.findall(r'\?playurl=(.*)&', param)[0], re.findall(r'&title=(.*)', param)[0])
-        elif "showpicture=" in param:
-            show_picture(re.findall(r'\?showpicture=(.*)', param)[0])
-        elif "getpicture=" in param:
-            get_picture(re.findall(r'\?getpicture=(.*)', param)[0])
-        elif "slideshow=" in param:
-            slideshow(re.findall(r'\?slideshow=(.*)&', param)[0], re.findall(r'&id=(.*)', param)[0])
-    else:
+    if not sys.argv[2]:
         get_menu("main")
+        return
+
+    param = sys.argv[2]
+    
+    # Map parameters to functions
+    param_map = {
+        "sitecat=": get_menu,
+        "favourites": get_favourites,
+        "search": search_actor,
+        "getProfile": get_profile_data,
+        "fuzzy": search_actor2,
+        "randomx": get_cams_from_json,
+        "tool=": handle_tool,
+        "category": get_cams_by_category,
+        "playactor=": play_actor,
+        "getalbums=": get_albums,
+        "getvideos=": get_videos,
+        "getalbum=": get_album,
+        "playurl=": play_url,
+        "showpicture=": show_picture,
+        "getpicture=": get_picture,
+        "slideshow=": slideshow
+    }
+
+    # Find matching parameter and call corresponding function
+    for key, func in param_map.items():
+        if key in param:
+            if key == "sitecat=":
+                func(re.findall(r'sitecat=(.*)', param)[0])
+            elif key == "getProfile":
+                func(re.findall(r'\?getProfile=(.*)', param)[0])
+            elif key == "tool=":
+                handle_tool(re.findall(r'\?tool=(.*)', param)[0])
+            elif key == "playactor=":
+                func(re.findall(r'\?playactor=(.*)', param)[0])
+            elif key == "getalbums=":
+                func(re.findall(r'\?getalbums=(.*)', param)[0])
+            elif key == "getvideos=":
+                func(re.findall(r'\?getvideos=(.*)', param)[0])
+            elif key == "getalbum=":
+                func(re.findall(r'\?getalbum=(.*)&', param)[0], re.findall(r'&id=(.*)', param)[0])
+            elif key == "playurl=":
+                func(re.findall(r'\?playurl=(.*)&', param)[0], re.findall(r'&title=(.*)', param)[0])
+            elif key == "showpicture=":
+                func(re.findall(r'\?showpicture=(.*)', param)[0])
+            elif key == "getpicture=":
+                func(re.findall(r'\?getpicture=(.*)', param)[0])
+            elif key == "slideshow=":
+                func(re.findall(r'\?slideshow=(.*)&', param)[0], re.findall(r'&id=(.*)', param)[0])
+            else:
+                func()
+            return
+
+    # If no matching parameter found
+    xbmc.log(f"Unhandled parameter: {param}", level=xbmc.LOGERROR)
+
+def handle_tool(tool):
+    tool_map = {
+        "fav-backup": tool_fav_backup,
+        "fav-restore": tool_fav_restore,
+        "thumbnails-delete": tool_thumbnails_delete
+    }
+    if tool in tool_map:
+        tool_map[tool]()
+    else:
+        xbmc.log(f"Unhandled tool: {tool}", level=xbmc.LOGERROR)
 
 def get_menu(param):
     """Decision tree. Shows main menu by default"""
@@ -196,7 +220,8 @@ def get_menu(param):
     for item in itemlist:
         url = sys.argv[0] + '?' + item[1]
         li = xbmcgui.ListItem(item[0])
-        li.setInfo('video', {'plot': item[2]})
+        vit = li.getVideoInfoTag()
+        vit.setPlot(item[2])
         items.append((url, li, True))
 
     xbmcplugin.addDirectoryItems(PLUGIN_ID, items)
@@ -251,7 +276,6 @@ def get_profile_data(item):
     data = get_site_page_full(API_ENDPOINT_MODEL.format(item))
     data = json.loads(data)
     xbmc.log("AVATAR URL: " + data["user"]["user"]["avatarUrl"], 1)
-    #return data["user"]["user"]["avatarUrl"]
     return data["user"]["user"]["avatarUrl"]
 
 def get_favourites():
@@ -291,8 +315,9 @@ def get_favourites():
         prg.update(int(i), "Favourite " + str(n) + " from " + str(len(res)) + " ( " + item + " )")
         url = sys.argv[0] + '?playactor=' + item
         li = xbmcgui.ListItem(item)
+        vit = li.getVideoInfoTag()
         
-        #Get JSON for model to load avatar, fanart and status
+        # Get JSON for model to load avatar, fanart and status
         try:
             if fav_check_online_status:
                 data = get_site_page_full(API_ENDPOINT_MODEL.format(item))
@@ -318,8 +343,7 @@ def get_favourites():
                 # Prices
                 plot += get_prices_string_for_plot(data["user"]["user"])
                 # Set plot
-                li.setInfo('video', {'plot': plot})
-                #xbmc.log("URL AVATAR: " + data["user"]["user"]["avatarUrl"])
+                vit.setPlot(plot)
             # Just list names
             else:
                 username = item
@@ -329,7 +353,7 @@ def get_favourites():
             # User does not exist anymore
             #xbmc.log("ERROR: " + str(e) + ". User " + item + " does not exist (anymore)!", 1)
             username = item + " (DEL)"
-            li.setInfo('video', {'plot': 'Username does not exist (anymore)!'})
+            vit.setPlot('Username does not exist (anymore)!')
             #pass
         li.setLabel(username)
         #Check offline etc. and add info to name!
@@ -371,20 +395,14 @@ def get_cams_from_json():
         url = sys.argv[0] + '?playactor=' + username
         xbmc.log("SC19: " + url,1)
         li = xbmcgui.ListItem(username)
+        vit = li.getVideoInfoTag()
         
         li.setLabel(username)
         li.setArt({'icon': icon, 'fanart': item['previewUrl']})
-        li.setInfo('video', {'sorttitle': str(id).zfill(2) + " - " + username})
+        vit.setSortTitle(str(id).zfill(2) + " - " + username)
         id = id + 1
-        li.setInfo('video', {
-                   #'plot': "GOAL: " + message 
-                   #        + "\n"
-                   'plot': "Status: " + item['status']
-                   #        + "\nStatus: " + item['status']
-                           + "\nViewers: " + str(viewers)
-                           + "\nFavorited: " + str(item['favoritedCount'])
-                           })
-        li.setInfo('video', {'count': viewers})
+        vit.setPlot(f"Status: {item['status']}\nViewers: {viewers}\nFavorited: {item['favoritedCount']}")
+        vit.setPlaycount(int(viewers))
         
         # Context menu
         li.addContextMenuItems(get_ctx_for_cam_item(username), True)
@@ -449,6 +467,8 @@ def get_cams_by_category():
             else:
                 li = xbmcgui.ListItem("Next (%s to %s)" % (str(newOffset+1),str(newOffset+LIST_LIMIT)))
                 
+            vit = li.getVideoInfoTag()
+            
             # Context menu
             commands = []
             commands.append(('Back first page',"Container.Update(%s?%s, replace)" % ( sys.argv[0],  "category/" + primaryTag + "/" + filterGroupTags)))
@@ -456,9 +476,9 @@ def get_cams_by_category():
             li.addContextMenuItems(commands, False)
             
             li.setArt({'icon': 'DefaultFolder.png'})
-            li.setInfo('video', {'sorttitle': str(999).zfill(2) + " - Next Page"})
-            li.setInfo('video', {'count': str(-1)})
-            li.setInfo('video', {'plot': "Total cams: " + str(filteredCount)})
+            vit.setSortTitle(str(999).zfill(2) + " - Next Page")
+            vit.setPlaycount(-1)
+            vit.setPlot("Total cams: " + str(filteredCount))
             xbmc.log("NEXT PAGE URL: " + sys.argv[0] + '?'+nextpageurl, 1)
             items.append((sys.argv[0] + '?'+nextpageurl, li, True))
             
@@ -471,10 +491,10 @@ def get_cams_by_category():
 
 def put_virtual_directoy_listing(items):
     """Put items to virtual directory listing and set sortings"""
-    xbmcplugin.setContent(int(sys.argv[1]), 'videos')
-    xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_VIDEO_SORT_TITLE)
-    #xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_PROGRAM_COUNT)
-    xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_LABEL)
+    xbmcplugin.setContent(PLUGIN_ID, 'videos')
+    xbmcplugin.addSortMethod(PLUGIN_ID, xbmcplugin.SORT_METHOD_VIDEO_SORT_TITLE)
+    xbmcplugin.addSortMethod(PLUGIN_ID, xbmcplugin.SORT_METHOD_PLAYCOUNT, "Viewers")
+    xbmcplugin.addSortMethod(PLUGIN_ID, xbmcplugin.SORT_METHOD_LABEL)
     xbmcplugin.addDirectoryItems(PLUGIN_ID, items)
     xbmcplugin.endOfDirectory(PLUGIN_ID)
 
@@ -519,6 +539,7 @@ def get_albums(actor):
         for item in data:
             url = sys.argv[0] + '?getalbum=' + actor + "&id=" + str(item['id'])
             li = xbmcgui.ListItem(str(item['id']))
+            
             #li.setInfo(type="Image", infoLabels={"Title": item['name'] + " "+ str(item['photosCount'])})
             li.setInfo('video', {'plot': "Photos: " + str(item['photosCount'])}) 
             if show_all:
@@ -624,6 +645,8 @@ def get_videos(actor):
         for item in data:
             #url = sys.argv[0] + '?getalbum=' + actor + "&id=" + str(item['id'])
             li = xbmcgui.ListItem(str(item['id']))
+            vit = li.getVideoInfoTag()
+            
             li.setArt({'icon': item['coverUrl']})
             
             if show_all:
@@ -638,13 +661,14 @@ def get_videos(actor):
                     if item['accessMode'] == 'verified':
                         li.setLabel(item['title'] + " (verified)")
                         
-                    li.setInfo('video', {'Duration': str(item['duration']), 'plot': "Restricted video: This is just a (shorter) trailer in lower quality."}) 
+                    vit.setDuration(item['duration'])
+                    vit.setPlot("Restricted video: This is just a (shorter) trailer in lower quality.")
                     url = sys.argv[0] + '?playurl=' + item['trailerUrl']  + "&title=" + actor + " - " + item['title']
                     items.append((url, li, False))
                     
                 else:        
                     li.setLabel(item['title'])
-                    li.setInfo('video', {'Duration': str(item['duration'])}) 
+                    vit.setDuration(item['duration'])
                     #li.setArt({'icon': item['coverUrl'], 'thumb': item['coverUrl']})
                     url = sys.argv[0] + '?playurl=' + item['videoUrl']  + "&title=" + actor + " - " + item['title']
                     items.append((url, li, False))
@@ -652,7 +676,7 @@ def get_videos(actor):
             else:
                 if item['accessMode'] == 'free':
                     li.setLabel(item['title'])
-                    li.setInfo('video', {'plot': "Duration in seconds: " + str(item['duration'])}) 
+                    vit.setPlot("Duration in seconds: " + str(item['duration']))                    
                     #li.setArt({'icon': item['coverUrl']})
                     url = sys.argv[0] + '?playurl=' + item['videoUrl']
                     items.append((url, li, False))
@@ -667,7 +691,11 @@ def get_videos(actor):
 def play_url(url, title):
     xbmc.log("PLAY URL: " + url, 1)
     li = xbmcgui.ListItem(str("Profile Video"))
-    li.setInfo('video', {'Title' : title, "Genre" : "Profile Video", "Plot" : title})
+    vit = li.getVideoInfoTag()
+    
+    vit.setTitle(title)
+    vit.setPlot(title)
+    vit.setGenres(["Profile Video"])
     li.setLabel(title)
     
     # Get stream player setting
@@ -714,18 +742,13 @@ def slideshow2(actor, id):
                 items.append((url, li, False))
             xbmcplugin.setContent(int(sys.argv[1]), 'files')
             xbmcplugin.addDirectoryItems(PLUGIN_ID, items, i)
-            #xbmcplugin.endOfDirectory(PLUGIN_ID)
-            #xbmc.StartSlideshow()
             xbmc.executebuiltin('SlideShow('+ "" + ', pause)')
-            #xbmc.executebuiltin('SlideShow('+ sys.argv[0] + "?getpicture=" + data[0]['url'] + ')')
     except:
         xbmcgui.Dialog().ok("Error", "Error getting album.")    
 
 def slideshow(actor, id):
     xbmc.executebuiltin('Dialog.Close(busydialog)')
     xbmc.executebuiltin("ActivateWindow(Pictures,"+ sys.argv[0] + '?getalbum=' + actor + "&id=" + id +")")
-    #xbmc.executebuiltin('SlideShow('+ sys.argv[0] + '?getalbum=' + actor + "&id=" + str(id) + ', pause)')
-    #xbmc.executebuiltin("Action(Play)")
 
 def get_picture(url):
     data = get_site_page_full(url)
@@ -796,7 +819,9 @@ def play_actor(actor, genre="Stripchat"):
     
         # Build kodi listem for playlist
         li = xbmcgui.ListItem(actor)
-        li.setInfo('video', {'Genre': genre, 'plot': bio})
+        vit = li.getVideoInfoTag()
+        vit.setGenres([genre])
+        vit.setPlot(bio)
         li.setArt({'icon': img})
    
         li.setMimeType('application/vnd.apple.mpegstream_url')
@@ -878,6 +903,7 @@ def search_actor():
 
             # Build kodi listem for virtual directory
             li = xbmcgui.ListItem(s)
+            vit = li.getVideoInfoTag()
 
             # Context menu
             commands = []
@@ -907,13 +933,15 @@ def search_actor():
                 # Regex topic
                 topic = data["cam"]["topic"]
                 
-                li.setInfo('video', {'Genre': '', 'plot': topic + "\n\n" + bio})
+                vit.setPlot(topic + "\n\n" + bio)
+                vit.setGenres(["Stripchat"])
+                
                 li.setLabel(s)
             else:
                 # Prepare default thumbnail
                 img = data["user"]["user"]["avatarUrl"]
-
-                li.setInfo('video', {'plot': bio})
+                
+                vit.setPlot(bio)
                 if status=="private":    
                     li.setLabel(s + " (pvt)")
                 if status=="p2p":    
@@ -1035,12 +1063,13 @@ def get_cam_infos_as_items(cams):
             url = sys.argv[0] + '?playactor=' + username
             #xbmc.log("SC19: " + url,1)
             li = xbmcgui.ListItem(username)
-                
+            vit = li.getVideoInfoTag()
+
             li.setLabel(get_username_string_from_status(username, item['status']))
             # PREVIEWURL REMOVED 20220505, USE THUMBBIG INSTEAD (CAN BE GUESSED, 'full' STILL EXISTS)
             li.setArt({'icon': icon, 'thumb' : icon, 'fanart': item['previewUrlThumbBig']})
             #li.setArt({'icon': icon, 'thumb' : item['previewUrlThumbBig'], 'fanart': item['previewUrlThumbBig']})
-            li.setInfo('video', {'sorttitle': str(id).zfill(2) + " - " + username})
+            vit.setSortTitle(str(id).zfill(2) + " - " + username)
             id = id + 1
             
             # Tag info
@@ -1050,7 +1079,7 @@ def get_cam_infos_as_items(cams):
             # Prices
             plot += get_prices_string_for_plot(item)
             # Set plot
-            li.setInfo('video', {'plot': plot})
+            vit.setPlot(plot)
             
             # Context menu
             li.addContextMenuItems(get_ctx_for_cam_item(username), True)
