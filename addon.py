@@ -347,7 +347,7 @@ def get_favourites():
             # Just list names
             else:
                 username = item
-                li.setArt({'icon': 'DefaultVideo.png'})
+                li.setArt({'icon': 'DefaultVideo.png', 'thumb': 'DefaultVideo.png'})
                 
         except Exception as e:
             # User does not exist anymore
@@ -398,7 +398,7 @@ def get_cams_from_json():
         vit = li.getVideoInfoTag()
         
         li.setLabel(username)
-        li.setArt({'icon': icon, 'fanart': item['previewUrl']})
+        li.setArt({'icon': icon, 'thumb': icon, 'fanart': item['previewUrl']})
         vit.setSortTitle(str(id).zfill(2) + " - " + username)
         id = id + 1
         vit.setPlot(f"Status: {item['status']}\nViewers: {viewers}\nFavorited: {item['favoritedCount']}")
@@ -475,7 +475,7 @@ def get_cams_by_category():
             commands.append(('Back main menu',"Container.Update(%s, replace)" % ( sys.argv[0])))
             li.addContextMenuItems(commands, False)
             
-            li.setArt({'icon': 'DefaultFolder.png'})
+            li.setArt({'icon': 'DefaultFolder.png', 'thumb': 'DefaultFolder.png'})
             vit.setSortTitle(str(999).zfill(2) + " - Next Page")
             vit.setPlaycount(-1)
             vit.setPlot("Total cams: " + str(filteredCount))
@@ -597,14 +597,11 @@ def get_album(actor, id):
                 li.setLabel("Photo " +  str(i).zfill(2))
                 i += 1
                 if not "url" in item:
-                    li.setArt({'icon': item['urlThumbMicro']})
+                    li.setArt({'icon': item['urlThumbMicro'], 'thumb': item['urlThumbMicro']})
                     url = sys.argv[0] + '?showpicture=' + item['urlThumbMicro']
                 else:
                     li.setArt({'icon': item['urlThumb'], 'thumb': item['urlThumb']})
                     url = sys.argv[0] + '?showpicture=' + item['url']
-                    #url = item['url']
-                    li.setArt({'thumb': item['urlThumb']})
-                #li.setInfo(type="Image", infoLabels={"Title": "PIC"})
                 li.setInfo(type='pictures', infoLabels={"title": "Photo " +  str(i).zfill(2), "picturepath": item['url']})
                 #li.setProperty("IsPlayable", "true")
                 #items.append((url, li, True))
@@ -647,7 +644,7 @@ def get_videos(actor):
             li = xbmcgui.ListItem(str(item['id']))
             vit = li.getVideoInfoTag()
             
-            li.setArt({'icon': item['coverUrl']})
+            li.setArt({'icon': item['coverUrl'], 'thumb': item['coverUrl']})
             
             if show_all:
                 if not item['accessMode'] == 'free':
@@ -822,7 +819,7 @@ def play_actor(actor, genre="Stripchat"):
         vit = li.getVideoInfoTag()
         vit.setGenres([genre])
         vit.setPlot(bio)
-        li.setArt({'icon': img})
+        li.setArt({'icon': img, 'thumb': img})
    
         li.setMimeType('application/vnd.apple.mpegstream_url')
         # Get stream player setting
@@ -958,7 +955,7 @@ def search_actor():
                     li.setLabel(s + " (idle)")
 
             # Set thumbnail and fanart
-            li.setArt({'icon': img, 'fanart' : data["user"]["user"]["previewUrl"]})
+            li.setArt({'icon': img, 'thumb': img, 'fanart' : data["user"]["user"]["previewUrl"]})
 
             # Put items to virtual directory listing
             url = sys.argv[0] + '?playactor=' + s
@@ -1068,7 +1065,6 @@ def get_cam_infos_as_items(cams):
             li.setLabel(get_username_string_from_status(username, item['status']))
             # PREVIEWURL REMOVED 20220505, USE THUMBBIG INSTEAD (CAN BE GUESSED, 'full' STILL EXISTS)
             li.setArt({'icon': icon, 'thumb' : icon, 'fanart': item['previewUrlThumbBig']})
-            #li.setArt({'icon': icon, 'thumb' : item['previewUrlThumbBig'], 'fanart': item['previewUrlThumbBig']})
             vit.setSortTitle(str(id).zfill(2) + " - " + username)
             id = id + 1
             
