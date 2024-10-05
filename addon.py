@@ -1050,7 +1050,7 @@ def get_cam_infos_as_items(cams):
     # Build kodi list items for virtual directory
     items = []
     id = 0
-        
+    
     for item in cams['models']:
         if not item['status'] == "offfff":
             username = item['username']
@@ -1061,13 +1061,15 @@ def get_cam_infos_as_items(cams):
             #xbmc.log("SC19: " + url,1)
             li = xbmcgui.ListItem(username)
             vit = li.getVideoInfoTag()
-
+            #log username and status
+            #xbmc.log("Username: " + username + " Status: " + item['status'], 1)
             li.setLabel(get_username_string_from_status(username, item['status']))
-            # PREVIEWURL REMOVED 20220505, USE THUMBBIG INSTEAD (CAN BE GUESSED, 'full' STILL EXISTS)
-            li.setArt({'icon': icon, 'thumb' : icon, 'fanart': item['previewUrlThumbBig']})
+            # previewUrlThumbBig is not available in JSON anymore, use previewUrlThumbSmall instead
+            # avaiable: thumb-small, thumb-big, full
+            fanart_url = item['previewUrlThumbSmall'].replace('-thumb-small', '-full')
+            li.setArt({'icon': icon, 'thumb': icon, 'fanart': fanart_url})
             vit.setSortTitle(str(id).zfill(2) + " - " + username)
             id = id + 1
-            
             # Tag info
             plot = get_tag_string_for_plot(item)
             # Status
