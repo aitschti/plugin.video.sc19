@@ -8,8 +8,7 @@ Tested on Android (Fire TV) and Windows, should work fine with other Linux syste
 
 - Listing of cams for all main categories
 - Pagination for listings (set cams per page and type of listing in settings)
-- Search for cam (exact name and fuzzy search)
-- "Random 10" lists 10 random cams (feature from Stripchat API)
+- Search for cam (exact name and normal fuzzy search)
 - Favourites list (with backup/restore function. Set path in settings first!)
 - Check online state of favourite cams before listing them (with progress bar, takes some time, can be disabled in settings)
 - View profile details of performer (context menu > videos and albums)
