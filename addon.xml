@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.sc19" version="1.5.1" name="SC19" provider-name="aitschti">
+<addon id="plugin.video.sc19" version="1.5.2" name="SC19" provider-name="aitschti">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
         <import addon="inputstream.ffmpegdirect" version="19.0.0"/>
@@ -29,8 +29,8 @@ All changes on GitHub: https://github.com/aitschti/plugin.video.sc19
         <summary lang="de_DE">Stripchat für Kodi 19/20/21</summary>
         <description lang="en_GB">Stripchat streaming for Kodi 19/20/21</description>
         <description lang="de_DE">Stripchat streaming für Kodi 19/20/21</description>
-        <disclaimer lang="en_GB">(c) 2024 aitschti</disclaimer>
-        <disclaimer lang="de_DE">(c) 2024 aitschti</disclaimer>
+        <disclaimer lang="en_GB">(c) 2025 aitschti</disclaimer>
+        <disclaimer lang="de_DE">(c) 2025 aitschti</disclaimer>
         <reuselanguageinvoker>false</reuselanguageinvoker>
     </extension>
 </addon>
