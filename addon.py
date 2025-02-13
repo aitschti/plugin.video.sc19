@@ -45,8 +45,8 @@ API_ENDPOINT_MEMBERS = "https://stripchat.com/api/front/models/username/{0}/memb
 API_ENDPOINT_ALBUMS = "https://stripchat.com/api/front/users/username/{0}/albums"
 API_ENDPOINT_ALBUM = "https://stripchat.com/api/front/users/username/{0}/albums/{1}/photos"
 API_ENDPOINT_VIDEOS = "https://stripchat.com/api/front/users/username/{0}/videos"
-API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/username?query={0}&limit=99"
-# differentiated API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/all?query={0}&limit=100"
+API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/username?query={0}&primaryTag={1}&limit=99"
+
 SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
 
 # User agent(s)
@@ -88,12 +88,12 @@ SITE_MENU = (('Categories - Girls', "sitecat=cats-f", "Show girls cams only."),
              ('Categories - Guys', "sitecat=cats-m", "Show guys cams only."), 
              ('Categories - Trans', "sitecat=cats-t", "Show trans cams only."),
              ("Favourites", "favourites", "Favourites list. Online status will be checked on opening the list."),
-             ("Search", "search", "Search for an exact username.\nA little more info about than with fuzzy search."),
-             ("Fuzzy search", "fuzzy", "List cams containing searchterm in username."),
-             ("Random 50", "randomx", "Random 50 live models (girls)"),
+             ("Search", "fuzzy/girls", "Search for cams. Girls only. Search for other genres with search in each category."),
+             ("Search Exact", "search", "Search for an exact username.\nA little more info about cam than normal search."),
              ("Tools", "sitecat=tools", "Some tools for cleanup and favourites.")
              )
-SITE_CATS_F     = (("All", "category/girls", ""),
+SITE_CATS_F     = (("Search", "fuzzy/girls", "Search for cams in girls category"),
+                   ("All", "category/girls", ""),
                    ("Recommended", "category/girls/recommended", ""),
                    ("VR cams", "category/girls/autoTagVr", ""),
                    ("New cams", "category/girls/autoTagNew", ""),
@@ -108,11 +108,14 @@ SITE_CATS_F     = (("All", "category/girls", ""),
                    ("Indian", "category/girls/ethnicityIndian", ""),
                    ("Latina", "category/girls/ethnicityLatino", ""),
                    ("White", "category/girls/ethnicityWhite", ""))
-SITE_CATS_M     = (('All', "category/men", ""),
+SITE_CATS_M     = (("Search", "fuzzy/men", "Search for cams in men category"),
+                   ('All', "category/men", ""),
                    ("New cams", "category/men/autoTagNew", ""))
-SITE_CATS_C     = (('All', "category/couples", ""),
+SITE_CATS_C     = (("Search", "fuzzy/couples", "Search for cams in couples category"),
+                   ('All', "category/couples", ""),
                    ("New cams", "category/couples/autoTagNew", ""))
-SITE_CATS_T     = (('All', "category/trans", ""),
+SITE_CATS_T     = (("Search", "fuzzy/trans", "Search for cams in trans category"),
+                   ('All', "category/trans", ""),
                    ("New cams", "category/trans/autoTagNew", ""))
 SITE_TOOLS = (("Backup Favourites", "tool=fav-backup", "Backup favourites (Set backup location in settings first). \nExisting favourites file will be overwritten without warning."),
               ("Restore Favourites", "tool=fav-restore", "Restore your favourites from backup location."),
@@ -135,7 +138,8 @@ def evaluate_request():
         get_menu("main")
         return
 
-    param = sys.argv[2]
+    # URL decode the parameter
+    param = urllib.parse.unquote(sys.argv[2])
     
     # Map parameters to functions
     param_map = {
@@ -143,8 +147,7 @@ def evaluate_request():
         "favourites": get_favourites,
         "search": search_actor,
         "getProfile": get_profile_data,
-        "fuzzy": search_actor2,
-        "randomx": get_cams_from_json,
+        "fuzzy/": search_actor2,
         "tool=": handle_tool,
         "category": get_cams_by_category,
         "playactor=": play_actor,
@@ -160,6 +163,9 @@ def evaluate_request():
     # Find matching parameter and call corresponding function
     for key, func in param_map.items():
         if key in param:
+            if key == "fuzzy/":
+                func(param.split("fuzzy/")[1].split("?")[0])
+                return
             if key == "sitecat=":
                 func(re.findall(r'sitecat=(.*)', param)[0])
             elif key == "getProfile":
@@ -369,7 +375,7 @@ def get_favourites():
     xbmcplugin.addDirectoryItems(PLUGIN_ID, items)
     xbmcplugin.endOfDirectory(PLUGIN_ID)
     
-    
+# Old random 50 function    
 def get_cams_from_json():
     """List available cams by category"""
     data = get_site_page_full('https://go.stripchat.com/api/models?limit=50')
@@ -868,7 +874,7 @@ def get_site_page_full(page):
 def search_actor():
     """Search for actor/username and list item if username exists"""
 
-    s = xbmcgui.Dialog().input("Search username")
+    s = xbmcgui.Dialog().input("Search for exact username")
     if s == '':
         xbmcplugin.endOfDirectory(int(sys.argv[1]), succeeded=False)
     else:
@@ -969,16 +975,17 @@ def search_actor():
 
 
 
-def search_actor2():
-    """Fuzzy Search for actor/username and list item if username is online"""
+def search_actor2(primaryTag=None):
+    """Fuzzy search for cams and list items if username exists"""
     
-    s = xbmcgui.Dialog().input("Fuzzy search username")
+    s = xbmcgui.Dialog().input("Search for username")
     if s == '':
         xbmcplugin.endOfDirectory(int(sys.argv[1]), succeeded=False)
         return
 
-    url = API_ENDPOINT_SEARCH.format(s)
-    xbmc.log("URL: " + url,1)
+    url = API_ENDPOINT_SEARCH.format(s, primaryTag if primaryTag else "girls")
+    xbmc.log(f"Search URL: {url}", 1)
+    
     try:
         data = get_site_page_full(url)
         cams = json.loads(data)
