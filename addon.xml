@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.sc19" version="1.5.3" name="SC19" provider-name="aitschti">
+<addon id="plugin.video.sc19" version="1.5.4" name="SC19" provider-name="aitschti">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
         <import addon="inputstream.ffmpegdirect" version="19.0.0"/>
