@@ -1,3 +1,5 @@
+BREAKING CHANGE AS OF LATE AUGUST FOR STREAMING OUTSIDE OF SC's SITE. NOTHING I CAN DO AT THE MOMENT. WILL UPDATE AS SOON AS SOLUTION IS IN SIGHT.
+
 # plugin.video.sc19
 
 A kodi plugin for streaming cams from stripchat.com. Works with all kodi releases 19, 20 and 21.
