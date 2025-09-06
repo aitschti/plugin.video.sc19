@@ -12,7 +12,9 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import socket
+import threading
 from datetime import datetime, timedelta
+import proxy_module
 
 # Config constants
 ADDON_NAME = "plugin.video.sc19"
@@ -22,6 +24,10 @@ DB_FAVOURITES_FILE = "favourites-sc.db"
 DB_FAVOURITES = xbmcvfs.translatePath("special://profile/addon_data/%s/%s" % (ADDON_NAME, DB_FAVOURITES_FILE))
 DB_TEXTURES = xbmcvfs.translatePath("special://userdata/Database/Textures13.db")
 PATH_THUMBS = xbmcvfs.translatePath("special://userdata/Thumbnails/")
+PROXY_SCRIPT_PATH = os.path.join(BASE_DIR, 'sc-proxy.py')
+
+# Global proxy instance
+_proxy_instance = None
 
 # Queries
 Q_THUMBNAILS = "SELECT url,cachedurl FROM texture WHERE url LIKE '%.strpst.com%'"
@@ -45,7 +51,7 @@ API_ENDPOINT_MODEL  = "https://stripchat.com/api/front/v2/models/username/{0}/ca
 API_ENDPOINT_MEMBERS = "https://stripchat.com/api/front/models/username/{0}/members"
 API_ENDPOINT_ALBUMS = "https://stripchat.com/api/front/v2/users/username/{0}/albums"
 API_ENDPOINT_ALBUM = "https://stripchat.com/api/front/users/username/{0}/albums/{1}/photos"
-API_ENDPOINT_VIDEOS = "https://de.stripchat.com/api/front/v2/users/username/{0}/videos"
+API_ENDPOINT_VIDEOS = "https://stripchat.com/api/front/v2/users/username/{0}/videos"
 API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/username?query={0}&primaryTag={1}&limit=99"
 
 SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
@@ -118,7 +124,7 @@ SITE_CATS_C     = (("Search", "fuzzy/couples", "Search for cams in couples categ
 SITE_CATS_T     = (("Search", "fuzzy/trans", "Search for cams in trans category"),
                    ('All', "category/trans", ""),
                    ("New cams", "category/trans/autoTagNew", ""))
-SITE_TOOLS = (("Backup Favourites", "tool=fav-backup", "Backup favourites (Set backup location in settings first). \nExisting favourites file will be overwritten without warning."),
+SITE_TOOLS = (("Backup Favourites", "tool=fav-backup", "Backup favourites (Set backup location in settings first)."),
               ("Restore Favourites", "tool=fav-restore", "Restore your favourites from backup location."),
               ("Delete Thumbnails", "tool=thumbnails-delete", "Delete cached stripchat related thumbnail files and database entries."))
 
@@ -381,10 +387,10 @@ def get_favourites():
 
     # Connect to favourites db
     db_con = connect_favourites_db()
-    c = db_con.cursor()
-    c.execute("SELECT * FROM favourites")
+    conn = db_con.cursor()
+    conn.execute("SELECT * FROM favourites")
     res = []
-    for (user) in c.fetchall():
+    for (user) in conn.fetchall():
         res.append((user[0]))
     res.sort()
 
@@ -426,7 +432,6 @@ def get_favourites():
                     else:
                         li.setArt({'icon': data["user"]["user"]["avatarUrl"], 'fanart': data["user"]["user"]['previewUrl']})
                 else:
-                    #SNAPSHOT_IMAGE = "https://img.strpst.com/thumbs/{0}/{1}_webp"
                     snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(data["user"]["user"]['snapshotTimestamp'],data["user"]["user"]['id'])
                     li.setArt({'icon': snap, 'thumb': snap, 'fanart': data["user"]["user"]['previewUrl']})
             
@@ -445,66 +450,23 @@ def get_favourites():
                 
         except Exception as e:
             # User does not exist anymore
-            #xbmc.log("ERROR: " + str(e) + ". User " + item + " does not exist (anymore)!", 1)
             username = item + " (DEL)"
             vit.setPlot('Username does not exist (anymore)!')
-            #pass
         li.setLabel(username)
-        #Check offline etc. and add info to name!
-        #Check for error if model deleted
+        #Set title
+        vit.setTitle(username)
+        # Clear playcount for directory items
+        vit.setPlaycount(0)
         # Context menu        
         li.addContextMenuItems(get_ctx_for_cam_item(item, True), True)
-        
-        items.append((url, li, True))
+        # Append to list
+        items.append((url, li, False))
 
     # Put items to virtual directory listing and set sortings
     xbmcplugin.setContent(int(sys.argv[1]), 'videos')
     xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_LABEL)
     xbmcplugin.addDirectoryItems(PLUGIN_ID, items)
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-    
-# Old random 50 function    
-def get_cams_from_json():
-    """List available cams by category"""
-    data = get_site_page_full('https://go.stripchat.com/api/models?limit=50')
-    
-    # JSON
-    data = json.loads(data)
-    
-    # Build kodi list items for virtual directory
-    items = []
-    id = 0
-    
-    for item in data['models']:
-        username = item['username']
-        icon = item['snapshotUrl']
-        #icon = item['avatarUrl']
-        #if 'goalMessage' in item:
-        #    message = item['goalMessage']
-        #else:
-        #    message = "n/a"
-        
-        viewers = item['viewersCount']
-        
-        url = sys.argv[0] + '?playactor=' + username
-        xbmc.log("SC19: " + url,1)
-        li = xbmcgui.ListItem(username)
-        vit = li.getVideoInfoTag()
-        
-        li.setLabel(username)
-        li.setArt({'icon': icon, 'thumb': icon, 'fanart': item['previewUrl']})
-        vit.setSortTitle(str(id).zfill(2) + " - " + username)
-        id = id + 1
-        vit.setPlot(f"Status: {item['status']}\nViewers: {viewers}\nFavorited: {item['favoritedCount']}")
-        vit.setPlaycount(int(viewers))
-        
-        # Context menu
-        li.addContextMenuItems(get_ctx_for_cam_item(username), True)
-        
-        items.append((url, li, True))
-        
-    # Put items to virtual directory listing and set sortings
-    put_virtual_directoy_listing(items)
 
 def get_cams_by_category():
     """List available cams by category"""
@@ -570,7 +532,7 @@ def get_cams_by_category():
             li.addContextMenuItems(commands, False)
             
             li.setArt({'icon': 'DefaultFolder.png', 'thumb': 'DefaultFolder.png'})
-            vit.setSortTitle(str(999).zfill(2) + " - Next Page")
+            vit.setSortTitle(str(999).zfill(2) + " - " + "Next Page")
             vit.setPlaycount(-1)
             vit.setPlot("Total cams: " + str(filteredCount))
             xbmc.log("NEXT PAGE URL: " + sys.argv[0] + '?'+nextpageurl, 1)
@@ -633,9 +595,9 @@ def get_albums(actor):
         for item in data:
             url = sys.argv[0] + '?getalbum=' + actor + "&id=" + str(item['id'])
             li = xbmcgui.ListItem(str(item['id']))
-            
-            #li.setInfo(type="Image", infoLabels={"Title": item['name'] + " "+ str(item['photosCount'])})
-            li.setInfo('video', {'plot': "Photos: " + str(item['photosCount'])}) 
+            vit = li.getVideoInfoTag()
+            vit.setPlot("Photos: " + str(item['photosCount']))
+
             if show_all:
                 if not item['accessMode'] == 'free':
                     li.setArt({'icon': item['previewMicro'], 'thumb' : item['previewMicro']})
@@ -672,8 +634,9 @@ def get_albums(actor):
         
     except:
         xbmcgui.Dialog().ok("Error", "Error filtering albums.")
+        
         return
-    
+            
 def get_album(actor, id):
     try:
         data = get_site_page_full(API_ENDPOINT_ALBUM.format(actor,id))
@@ -730,7 +693,6 @@ def get_videos(actor):
                 xbmcgui.Dialog().ok("Profile videos", "There are no free videos available for this profile")
                 return
                     
-        
         # Parse items and build kodi listitems for virtual directory
         items = []
         for item in data:
@@ -760,7 +722,6 @@ def get_videos(actor):
                 else:        
                     li.setLabel(item['title'])
                     vit.setDuration(item['duration'])
-                    #li.setArt({'icon': item['coverUrl'], 'thumb': item['coverUrl']})
                     url = sys.argv[0] + '?playurl=' + item['videoUrl']  + "&title=" + actor + " - " + item['title']
                     items.append((url, li, False))
                 
@@ -768,7 +729,6 @@ def get_videos(actor):
                 if item['accessMode'] == 'free':
                     li.setLabel(item['title'])
                     vit.setPlot("Duration in seconds: " + str(item['duration']))                    
-                    #li.setArt({'icon': item['coverUrl']})
                     url = sys.argv[0] + '?playurl=' + item['videoUrl']
                     items.append((url, li, False))
         
@@ -797,7 +757,7 @@ def play_url(url, title):
     if stream_player == "1":
         li.setProperty('inputstream', 'inputstream.ffmpegdirect')
         xbmc.log(ADDON_SHORTNAME + ": " + "Using InputStream FFmpegDirect", 1)
-    
+
     xbmc.Player().play(url,li)
     
 def show_picture(url):
@@ -848,11 +808,12 @@ def get_picture(url):
 def play_actor(actor, genre="Stripchat"):
     """Get playlist for actor/username and add m3u8 to kodi's playlist"""
     
+    global _proxy_instance
+    
     # Try to play actor
     try:
         # Fetch and store HTML
         url = API_ENDPOINT_MODEL.format(actor)       
-        #xbmc.log("URL to play: " + url, 1)
         data = get_site_page_full(url)
         data = json.loads(data)
         
@@ -866,11 +827,7 @@ def play_actor(actor, genre="Stripchat"):
         img = data["user"]["user"]["avatarUrl"]
         if not data["cam"]["topic"] == "":
             bio = "Topic: " + data["cam"]["topic"] + "\n"
-        
-        # variants hls_source = "https://edge-hls.doppiocdn.com/hls/{0}/master/{0}_auto.m3u8".format(data["cam"]["streamName"])
-        # best only hls_source = "https://edge-hls.doppiocdn.com/hls/{0}/master/{0}.m3u8".format(data["cam"]["streamName"])
-        hls_source = "https://edge-hls.doppiocdn.com/hls/{0}/master/{0}.m3u8".format(data["cam"]["streamName"])
-        
+
         status = data["user"]["user"]["status"]
         isLive = data["user"]["user"]["isLive"]
             
@@ -878,42 +835,72 @@ def play_actor(actor, genre="Stripchat"):
         if isLive == False:
             statusts = data["user"]["user"]["statusChangedAt"]
             xbmcgui.Dialog().ok(STRINGS['not_live'], "Status: " + USER_STATES_NICE["off"] + "\nLast broadcast: " + format_timestamp_relative(statusts))
+            xbmc.executebuiltin('Dialog.Close(busydialog)')
             return
         # All other states
         if not status == "public":
             if status in USER_STATES_NICE:
-                xbmcgui.Dialog().ok(STRINGS['na'], STRINGS['last_status'] + USER_STATES_NICE[status])  
-                return
-            # Unknown state
+                xbmcgui.Dialog().ok(STRINGS['na'], STRINGS['last_status'] + USER_STATES_NICE[status])
             else:
-                xbmcgui.Dialog().ok(STRINGS['na'], STRINGS['unknown_status'] + status)  
+                xbmcgui.Dialog().ok(STRINGS['na'], STRINGS['unknown_status'] + status)
+            xbmc.executebuiltin('Dialog.Close(busydialog)')
+            return
+        
+        # Check proxy settings
+        use_external_proxy = ADDON.getSettingBool('use_external_proxy')
+        if use_external_proxy:
+            external_ip = ADDON.getSetting('external_proxy_ip')
+            external_port = ADDON.getSettingInt('external_proxy_port')
+            if not external_ip:
+                xbmcgui.Dialog().ok("Proxy Error", "External proxy IP is not set.")
+                xbmc.executebuiltin('Dialog.Close(busydialog)')
                 return
+            pl = f"http://{external_ip}:{external_port}/{actor}"
+            xbmc.log(ADDON_SHORTNAME + ": Using external proxy: " + pl, 1)
+        else:
+            # Always use internal proxy
+            proxy_port = ADDON.getSettingInt('proxy_port') or 8099
+            xbmc.log(ADDON_SHORTNAME + ": Proxy port: " + str(proxy_port), 1)
             
+            # Check if port is already in use (proxy running)
+            if not is_port_in_use(proxy_port):
+                try:
+                    xbmc.log(ADDON_SHORTNAME + ": Starting proxy", 1)
+                    _proxy_instance = proxy_module.get_proxy(port=proxy_port)
+                    xbmc.log(ADDON_SHORTNAME + ": Proxy started successfully", 1)
+                except Exception as e:
+                    xbmc.log(ADDON_SHORTNAME + ": Failed to start proxy: " + str(e), xbmc.LOGERROR)
+                    xbmcgui.Dialog().ok("Proxy Error", f"Failed to start proxy. Cannot play stream.\nError: {str(e)}")
+                    xbmc.executebuiltin('Dialog.Close(busydialog)')
+                    return
+            else:
+                xbmc.log(ADDON_SHORTNAME + ": Proxy already running on port " + str(proxy_port) + ", reusing it", 1)
             
-        # Extract playlist
-        pl = hls_source
-    
+            # Use proxy URL
+            pl = f"http://127.0.0.1:{proxy_port}/{actor}"
+            xbmc.log(ADDON_SHORTNAME + ": Constructed URL: " + pl, 1)
+
         # Bio stats
         if not data["cam"]["goal"] == None:
             bio += "Goal: " + data["cam"]["goal"]["description"] + " [" + str(data["cam"]["goal"]["spent"]) + "/" + str(data["cam"]["goal"]["goal"]) + "]\n"
-            
+
         if not data["user"]["user"]["name"] == "":
             bio += "Name: " + data["user"]["user"]["name"] + "\n"
-        viewers = get_viewers_count(actor)
-        bio += "Viewers: " + str(viewers) + "\n"
-        bio += get_prices_string_for_plot(data["user"]["user"]) + "\n"
-        if not data["user"]["user"]["description"] == "":
-            bio += "Description: " + data["user"]["user"]["description"] + "\n"
-        #bio += "Birthday: " + data["user"]["user"]["birthDate"]
-    
-        # Build kodi listem for playlist
+            viewers = get_viewers_count(actor)
+            bio += "Viewers: " + str(viewers) + "\n"
+            bio += get_prices_string_for_plot(data["user"]["user"]) + "\n"
+            if not data["user"]["user"]["description"] == "":
+                bio += "Description: " + data["user"]["user"]["description"] + "\n"
+
+        # Build kodi listitem for playlist
         li = xbmcgui.ListItem(actor)
         vit = li.getVideoInfoTag()
         vit.setGenres([genre])
         vit.setPlot(bio)
         li.setArt({'icon': img, 'thumb': img})
-   
-        li.setMimeType('application/vnd.apple.mpegstream_url')
+
+        li.setMimeType('application/vnd.apple.mpegurl')
+        
         # Get stream player setting
         stream_player = xbmcaddon.Addon().getSetting('stream_player')
         # Set inputstream addon based on setting
@@ -921,26 +908,22 @@ def play_actor(actor, genre="Stripchat"):
             xbmc.log(ADDON_SHORTNAME + ": " + "Using default stream player", 1)
         if stream_player == "1":
             li.setProperty('inputstream', 'inputstream.ffmpegdirect')
+            li.setProperty('inputstream.ffmpegdirect.is_realtime_stream', 'true')  # Indicate live stream
+            if ADDON.getSettingBool('use_ffmpeg_timeshift'):
+                li.setProperty('inputstream.ffmpegdirect.stream_mode', 'timeshift')  # Enable timeshift
             xbmc.log(ADDON_SHORTNAME + ": " + "Using InputStream FFmpegDirect", 1)
+
         # Play stream
         xbmc.Player().play(pl, li)
+        xbmc.executebuiltin('Dialog.Close(busydialog)')
+        xbmcplugin.setResolvedUrl(PLUGIN_ID, True, li)
+        return
     
-    except:
-        xbmcgui.Dialog().notification("Error", "Something went wrong.", "", 1000, False)  
-
-
-def get_site_page(page):
-    """Fetch HTML data from site (old variant)"""
-
-    url = "%s/%s" % (SITE_URL, page)
-    xbmc.log("URL: " + url, 1)
-    req = urllib.request.Request(url)
-    req.add_header('Referer', SITE_REFFERER)
-    req.add_header('Origin', SITE_ORIGIN)
-    req.add_header('User-Agent', USER_AGENT)
-    req.add_header('Accept', SITE_ACCEPT)
-    
-    return urllib.request.urlopen(req).read()
+    except Exception as e:
+        xbmc.log(ADDON_SHORTNAME + ": Exception in play_actor: " + str(e), xbmc.LOGERROR)
+        xbmcgui.Dialog().notification("Error", "Something went wrong: " + str(e), "", 3000, False)
+        xbmc.executebuiltin('Dialog.Close(busydialog)')
+        return
 
 def get_site_page_full(page):
     """Fetch HTML data from site"""
@@ -983,9 +966,6 @@ def search_actor():
             try:
                 # Try to extract the playlist. Only exists if user is online and not in private
                 status = data["user"]["user"]["status"]
-                
-                #pl = re.findall(PAT_PLAYLIST, data)[0]
-                #pl = pl.replace(b'\\u002D', b'-')
             except:
                 # User is offline
                 pass
@@ -1013,7 +993,6 @@ def search_actor():
             bio += "Viewers: " + str(viewers) + "\n"
             if not data["user"]["user"]["description"] == "":
                 bio += "Description: " + data["user"]["user"]["description"] + "\n"
-            #bio += "Birthday: " + data["user"]["user"]["birthDate"]
 
             if status=="public":
                 # Regex thumbnail
@@ -1049,10 +1028,12 @@ def search_actor():
             # Set thumbnail and fanart
             li.setArt({'icon': img, 'thumb': img, 'fanart' : data["user"]["user"]["previewUrl"]})
 
-            # Put items to virtual directory listing
+            # Clear playcount for directory items
+            vit.setPlaycount(0)
+            
             url = sys.argv[0] + '?playactor=' + s
             xbmcplugin.setContent(int(sys.argv[1]), 'videos')
-            xbmcplugin.addDirectoryItems(PLUGIN_ID, [(url, li, True)])
+            xbmcplugin.addDirectoryItems(PLUGIN_ID, [(url, li, False)])
             xbmcplugin.endOfDirectory(PLUGIN_ID)
 
         # Actor does not exist, we got an HTTP 404 error
@@ -1149,13 +1130,9 @@ def get_cam_infos_as_items(cams):
             username = item['username']
             
             icon = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(item['snapshotTimestamp'],item['id'])
-            #xbmc.log("ICON for " + username + ": " + icon, 1)
             url = sys.argv[0] + '?playactor=' + username
-            #xbmc.log("SC19: " + url,1)
             li = xbmcgui.ListItem(username)
             vit = li.getVideoInfoTag()
-            #log username and status
-            #xbmc.log("Username: " + username + " Status: " + item['status'], 1)
             li.setLabel(get_username_string_from_status(username, item['status']))
             # previewUrlThumbBig is not available in JSON anymore, use previewUrlThumbSmall instead
             # avaiable: thumb-small, thumb-big, full
@@ -1171,11 +1148,13 @@ def get_cam_infos_as_items(cams):
             plot += get_prices_string_for_plot(item)
             # Set plot
             vit.setPlot(plot)
-            
+            # Set title
+            vit.setTitle(username)
+            # Clear playcount for directory items
+            vit.setPlaycount(0)
             # Context menu
             li.addContextMenuItems(get_ctx_for_cam_item(username), True)
-            
-            items.append((url, li, True))
+            items.append((url, li, False))
     return items
 
 def get_ctx_for_cam_item(username, remove=False):
@@ -1190,10 +1169,6 @@ def get_ctx_for_cam_item(username, remove=False):
     # Profile info
     commands.append(('Show profile albums',"Container.Update(%s?%s)" % ( sys.argv[0],  "getalbums=" + username)))
     commands.append(('Show profile videos',"Container.Update(%s?%s)" % ( sys.argv[0],  "getvideos=" + username)))
-    # Settings
-    #commands.append(('Settings',xbmc.executebuiltin('ADDON.openSettings()')))
-    #commands.append(('Settings',ADDON.openSettings()))
-    #ShowPicture(picture)
     return commands
 
 def get_icon_from_status(status):
@@ -1218,6 +1193,7 @@ def tool_thumbnails_delete():
     rc = tool_thumbnails_delete2()
     # Summary dialog
     xbmcgui.Dialog().ok("Delete Thumbnails", "Deleted %s thumbnail files and database entries" % (str(rc)))
+    xbmc.executebuiltin('Dialog.Close(busydialog)')
 
 def tool_thumbnails_delete2():   
     # Connect to textures db
@@ -1231,10 +1207,8 @@ def tool_thumbnails_delete2():
     rows = cur.fetchall()
     for row in rows:
         rc = rc + 1
-        #xbmc.log("Thumb: " + PATH_THUMBS + str(row[1]),1)
         if os.path.exists(PATH_THUMBS + str(row[1])):
             os.remove(PATH_THUMBS + str(row[1]))
-            #xbmc.log("The file has been successfully deleted.",1)
         else:
             #xbmc.log("The file does not exist.",1)
             pass
@@ -1246,6 +1220,17 @@ def tool_thumbnails_delete2():
     # Return number of entries found and log
     xbmc.log(ADDON_SHORTNAME + ": Deleted %s thumbnail files and database entries" % (str(rc)),1)
     return rc
+
+def is_port_in_use(port):
+    """Check if a port is in use by attempting to connect to it."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)  # Short timeout to avoid hanging
+            result = s.connect_ex(('127.0.0.1', port))
+            return result == 0  # 0 means connection successful (port in use)
+    except Exception as e:
+        xbmc.log(f"{ADDON_SHORTNAME}: Error checking port {port}: {str(e)}", xbmc.LOGERROR)
+        return False  # Assume not in use if check fails
 
 if __name__ == "__main__":
     evaluate_request()
