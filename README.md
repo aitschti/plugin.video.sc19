@@ -1,3 +1,5 @@
+# BREAKING CHANGE AS OF LATE AUGUST FOR STREAMING FROM SC. PLAYLISTS URLS ARE NOW ENCRYPTED. SEE ISSUES FOR MORE INFO AND A WORKAROUND.
+
 # plugin.video.sc19
 
 A kodi plugin with integrated proxy for streaming cams from stripchat.com. Works with all kodi releases 19, 20 and 21.
