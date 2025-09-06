@@ -53,8 +53,32 @@ FORWARD_HEADERS = {
 # API Endpoints
 API_ENDPOINT_MODEL = "https://stripchat.com/api/front/v2/models/username/{}/cam"
 
-# M3U8 URL Template
-M3U8_BASE_URL = "https://edge-hls.doppiocdn.com/hls/{}/master/{}.m3u8"
+# M3U8 URL Template and CDN
+CDN_OPTIONS = {
+    0: 'doppiocdn.org',
+    1: 'doppiocdn.net',
+    2: 'doppiocdn.com'
+}
+
+def _get_cdn_base_url():
+    """Get the CDN base URL template from Kodi addon settings."""
+    try:
+        addon = xbmcaddon.Addon()
+        choice_str = addon.getSetting('cdn_choice')
+        if choice_str:
+            choice = int(choice_str)
+            if choice in CDN_OPTIONS:
+                domain = CDN_OPTIONS[choice]
+                _debug("Using CDN choice from settings: %s (%s)" % (choice, domain))
+                return f"https://edge-hls.{domain}/hls/{{}}/master/{{}}.m3u8"
+            else:
+                _debug("Invalid CDN choice: %s, using default" % choice)
+        else:
+            _debug("CDN choice not set, using default")
+        return "https://edge-hls.doppiocdn.net/hls/{}/master/{}.m3u8"
+    except Exception as e:
+        _error(f"Failed to read CDN choice from settings: {e}")
+        return "https://edge-hls.doppiocdn.net/hls/{}/master/{}.m3u8"
 
 # Tunables
 REQUEST_TIMEOUT = 5
@@ -656,7 +680,9 @@ def fetch_stream_url(username):
             _error(f"Stream offline or private (status: {user_data['status']})")
             return None
         stream_name = data["cam"]["streamName"]
-        m3u8_url = M3U8_BASE_URL.format(stream_name, stream_name)
+        # Use the dynamic CDN base URL from settings
+        base_url = _get_cdn_base_url()
+        m3u8_url = base_url.format(stream_name, stream_name)
         # Cache the result
         _username_m3u8_cache[username] = (now, m3u8_url)
         return m3u8_url
