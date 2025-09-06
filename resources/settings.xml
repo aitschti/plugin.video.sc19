@@ -29,5 +29,6 @@
     <category label="Other">
         <setting id="del_thumbs_on_startup" type="bool" default="false" label="Delete thumbnails every time you open a list"/>
         <setting id="request_timeout" type="slider" label="Request Timeout - Time to wait for a response" option="int" range="1,1,30" default="5" />
+        <setting id="cdn_choice" type="enum" default="1" values="doppiocdn.org|doppiocdn.net|doppiocdn.com" label="Choose CDN (may reduce network latency)" />
     </category>
 </settings>
