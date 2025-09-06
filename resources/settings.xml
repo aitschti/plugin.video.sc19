@@ -15,13 +15,19 @@
         <setting id="ctx_show_all_albums" type="bool" default="true" label="Context menu - List restricted albums as well (just for info)"/>
         <setting id="ctx_show_all_videos" type="bool" default="true" label="Context menu - List restricted videos as well (trailer only)"/>
     </category>
-    <category label="Thumbnails">
-        <setting id="del_thumbs_on_startup" type="bool" default="false" label="Delete thumbnails every time you open a list"/>
-    </category>
-    <category label="Scraper">
-        <setting id="request_timeout" type="slider" label="Request Timeout - Time to wait for the response of a request" option="int" range="1,1,30" default="5" />
-    </category>
-    <category label="Cams">
+    <category label="Stream options">
         <setting id="stream_player" type="enum" values="Default|InputStream FFmpegDirect" default="1" label="Stream player engine" />
+        <setting id="use_ffmpeg_timeshift" type="bool" default="false" label="Use FFmpegDirect timeshift" />
+    </category>
+    <category label="Proxy">
+        <setting id="proxy_port" type="number" default="8099" label="Internal HLS proxy port (default = 8099)" />
+        <setting id="decode_key" type="text" default="" label="HLS playlist decode Key" help="Enter the decode key for playlist decryption" />
+        <setting id="use_external_proxy" type="bool" label="Use external proxy instead (e.g. scp-standalone)" default="false" />
+        <setting id="external_proxy_ip" type="text" default="" label="External proxy IP" />
+        <setting id="external_proxy_port" type="number" default="8099" label="External proxy port (default = 8099)" />
+    </category>
+    <category label="Other">
+        <setting id="del_thumbs_on_startup" type="bool" default="false" label="Delete thumbnails every time you open a list"/>
+        <setting id="request_timeout" type="slider" label="Request Timeout - Time to wait for a response" option="int" range="1,1,30" default="5" />
     </category>
 </settings>
