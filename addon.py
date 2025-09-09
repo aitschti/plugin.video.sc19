@@ -884,13 +884,13 @@ def play_actor(actor, genre="Stripchat"):
         if not data["cam"]["goal"] == None:
             bio += "Goal: " + data["cam"]["goal"]["description"] + " [" + str(data["cam"]["goal"]["spent"]) + "/" + str(data["cam"]["goal"]["goal"]) + "]\n"
 
-        if not data["user"]["user"]["name"] == "":
-            bio += "Name: " + data["user"]["user"]["name"] + "\n"
-            viewers = get_viewers_count(actor)
-            bio += "Viewers: " + str(viewers) + "\n"
-            bio += get_prices_string_for_plot(data["user"]["user"]) + "\n"
-            if not data["user"]["user"]["description"] == "":
-                bio += "Description: " + data["user"]["user"]["description"] + "\n"
+        name_to_use = data["user"]["user"]["name"] if data["user"]["user"]["name"] else data["user"]["user"]["username"]
+        bio += "Name: " + name_to_use + "\n"
+        viewers = get_viewers_count(actor)
+        bio += "Viewers: " + str(viewers) + "\n"
+        bio += get_prices_string_for_plot(data["user"]["user"]) + "\n"
+        if not data["user"]["user"]["description"] == "":
+            bio += "Description: " + data["user"]["user"]["description"] + "\n"
 
         # Build kodi listitem for playlist
         li = xbmcgui.ListItem(actor)
