@@ -41,7 +41,7 @@ Outlook: They already serve a "v1" attribute in the m3u8 files, which may sugges
 
 - Install the addon from the ZIP file in Kodi.
 - **Proxy Setup (if using internal proxy)**: The addon uses a proxy for streaming. Ensure the proxy port (default 8099) is available and not in use by other applications. You can configure the port in the addon settings.
-- **Decode Key**: You must set a decode key in the addon's settings. This key is essential for decrypting stream URLs.
+- **Decode Key**: You must set a decode key in the addon's settings. This key is essential for decrypting stream URLs (using internal proxy).
 - **Favourites**: Set a path for a backup location of the favourites database for easy backup and restore and sharing with other clients in your network.
 
 ## Recommended settings
