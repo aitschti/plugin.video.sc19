@@ -40,14 +40,16 @@ Outlook: They already serve a "v1" attribute in the m3u8 files, which may sugges
 **First use**:
 
 - Install the addon from the ZIP file in Kodi.
-- **Proxy Setup (if using internal proxy)**: The addon uses a proxy for streaming. Ensure the proxy port (default 8099) is available and not in use by other applications. You can configure the port in the addon settings.
+- **Proxy Setup (using internal proxy)**: The addon uses a proxy for streaming. Ensure the proxy port (default 8099) is available and not in use by other applications. You can configure the port in the addon settings.
 - **Decode Key**: You must set a decode key in the addon's settings. This key is essential for decrypting stream URLs (using internal proxy).
 - **Favourites**: Set a path for a backup location of the favourites database for easy backup and restore and sharing with other clients in your network.
 
-## Recommended settings
+## Recommended settings / tips
 
 - Tested with Estuary skin only
 - "Info wall" is the recommended view for listings as you get a little more details about the cam
+- Use variants (instead of best only quality) playlist, if you have issues. May be slower, though
+- Change CDN in settings ("Other"), if you have connection issues / are ip blocked (default doppiocdn.net)
 
 ## License
 
