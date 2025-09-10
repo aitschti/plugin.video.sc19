@@ -271,7 +271,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 for h, v in cached.get('headers', {}).items():
                     self.send_header(h, v)
                 self.send_header('Content-Length', str(len(cached['bytes'])))
-                self.send_header('Connection', 'close')
+                self.send_header('Connection', 'keep-alive')
                 self.end_headers()
             except Exception as e:
                 _error("Error serving cached HEAD for %s: %s" % (orig, e))
@@ -391,7 +391,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 for h, v in cached.get('headers', {}).items():
                     self.send_header(h, v)
                 self.send_header('Content-Length', str(len(cached['bytes'])))
-                self.send_header('Connection', 'close')
+                self.send_header('Connection', 'keep-alive')
                 self.end_headers()
                 self.wfile.write(cached['bytes'])
             except Exception as e:
@@ -432,7 +432,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/vnd.apple.mpegurl')
                 self.send_header('Content-Length', str(len(body)))
                 self.send_header('Cache-Control', 'no-cache')
-                self.send_header('Connection', 'close')
+                self.send_header('Connection', 'keep-alive')
                 self.end_headers()
                 self.wfile.write(body)
                 return
@@ -530,7 +530,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/vnd.apple.mpegurl')
                 self.send_header('Content-Length', str(len(body)))
                 self.send_header('Cache-Control', 'no-cache')
-                self.send_header('Connection', 'close')
+                self.send_header('Connection', 'keep-alive')
                 self.end_headers()
                 self.wfile.write(body)
                 return
@@ -557,7 +557,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         ce = resp.headers.get('Content-Encoding')
         if ce:
             self.send_header('Content-Encoding', ce)
-        self.send_header('Connection', 'close')
+        self.send_header('Connection', 'keep-alive')
         self.end_headers()
 
         # Original streaming logic
