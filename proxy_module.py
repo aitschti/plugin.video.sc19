@@ -62,23 +62,26 @@ CDN_OPTIONS = {
 
 def _get_cdn_base_url():
     """Get the CDN base URL template from Kodi addon settings."""
+    suffix = ""
     try:
         addon = xbmcaddon.Addon()
         choice_str = addon.getSetting('cdn_choice')
+        use_variants = addon.getSettingBool('use_variants')
+        suffix = "_auto" if use_variants else ""
         if choice_str:
             choice = int(choice_str)
             if choice in CDN_OPTIONS:
                 domain = CDN_OPTIONS[choice]
                 _debug("Using CDN choice from settings: %s (%s)" % (choice, domain))
-                return f"https://edge-hls.{domain}/hls/{{}}/master/{{}}.m3u8"
+                return f"https://edge-hls.{domain}/hls/{{}}/master/{{}}{suffix}.m3u8"
             else:
                 _debug("Invalid CDN choice: %s, using default" % choice)
         else:
             _debug("CDN choice not set, using default")
-        return "https://edge-hls.doppiocdn.net/hls/{}/master/{}.m3u8"
+        return f"https://edge-hls.doppiocdn.net/hls/{{}}/master/{{}}{suffix}.m3u8"
     except Exception as e:
         _error(f"Failed to read CDN choice from settings: {e}")
-        return "https://edge-hls.doppiocdn.net/hls/{}/master/{}.m3u8"
+        return f"https://edge-hls.doppiocdn.net/hls/{{}}/master/{{}}{suffix}.m3u8"
 
 # Tunables
 REQUEST_TIMEOUT = 5
