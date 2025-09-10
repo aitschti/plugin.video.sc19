@@ -16,7 +16,7 @@ To solve this, we can use a proxy that takes the requested m3u8 file, decrypts t
 
 All the needed info for decrypting is already available in the m3u8 files themselves, except the function to decrypt the segment filenames with the needed key. The javascript handling all of this gets dynamically loaded from the site as a blob when using a browser, so we do not have simple url to load it from. One can quite easily extract the key from the blob with a browser's development tools.
 
-For possible legal reason, I will not provide the key with this addon, not even obfuscated. You will need to extract it yourself. Stripchat did not implement theses measures for fun.
+For possible legal reason, I will not provide the key with this addon, not even obfuscated. You will need to extract it yourself. Stripchat did not implement theses measures for fun. See issues here for some research hints.
 
 I am sorry this is making it more difficult to use this addon.
 
