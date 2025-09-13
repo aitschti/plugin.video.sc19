@@ -42,7 +42,7 @@ ART_FOLDER = ADDON.getAddonInfo('path') + '/resources/media/'
 
 # URLs and headers for requests
 SITE_URL = "https://stripchat.com"
-SITE_REFFERER = "https://stripchat.com"
+SITE_REFFERER = "https://stripchat.com/"
 SITE_ORIGIN = "https://stripchat.com"
 SITE_ACCEPT = "text/html"
 API_ENDPOINT_MODELS = "https://stripchat.com/api/front/models"
