@@ -44,7 +44,7 @@ def _error(msg: str):
 
 # Basic headers to forward when fetching original resources
 FORWARD_HEADERS = {
-    'Referer': 'https://stripchat.com',
+    'Referer': 'https://stripchat.com/',
     'Origin': 'https://stripchat.com',
     'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.182 Safari/537.36",
     'Accept': '*/*'
@@ -52,6 +52,7 @@ FORWARD_HEADERS = {
 
 # API Endpoints
 API_ENDPOINT_MODEL = "https://stripchat.com/api/front/v2/models/username/{}/cam"
+API_CONFIG_URL = "https://stripchat.com/api/front/v3/config/static"
 
 # M3U8 URL Template and CDN
 CDN_OPTIONS = {
@@ -101,19 +102,90 @@ _stream_m3u8_url = None
 _username_m3u8_cache = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
+# Global cache for decode key (synced with addon settings)
+_decode_key = None
+
 def _get_decode_key():
-    """Get the decode key from Kodi addon settings."""
-    try:
-        addon = xbmcaddon.Addon()
-        key = addon.getSetting('decode_key')
-        if not key:
-            _error("Decode key is empty in settings. Playback will fail for encrypted streams.")
+    """Get the decode key from Kodi addon settings (cached globally)."""
+    global _decode_key
+    if _decode_key is None:
+        try:
+            addon = xbmcaddon.Addon()
+            _decode_key = addon.getSetting('decode_key')
+            if not _decode_key:
+                _error("Decode key is empty in addon settings. Playback will fail for encrypted streams.")
+                return None
+            _debug("Using decode key from addon settings")
+        except Exception as e:
+            _error(f"Failed to read decode key from addon settings: {e}")
             return None
-        _debug("Using decode key from settings")
-        return key
+    return _decode_key
+
+def _getkey_from_site(pkey: str):
+    """Fetch the decode key from the site using pkey, update addon settings, and cache globally."""
+    if not pkey:
+        _error("No pkey provided for key fetch.")
+        return
+    
+    xbmc.executebuiltin('Notification(SC19 Proxy, Fetching new decode key..., 3000)')
+    _info("Starting fetch for new decode key using pkey.")
+    
+    try:
+        # Fetch config JSON
+        config_url = API_CONFIG_URL
+        req = urllib.request.Request(config_url, headers=FORWARD_HEADERS)
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            config_data = json.load(resp)
+        
+        static_data = config_data.get('static', {})
+        origin = static_data.get('features', {}).get('MMPExternalSourceOrigin')
+        version = static_data.get('featuresV2', {}).get('playerModuleExternalLoading', {}).get('mmpVersion')
+        
+        if not origin or not version:
+            _error("Failed to extract URLs from config API.")
+            xbmc.executebuiltin('Notification(SC19 Proxy, Key fetch failed: Invalid config, 5000)')
+            return
+        
+        # Fetch main.js
+        main_js_url = f"{origin}/v{version}/main.js"
+        req = urllib.request.Request(main_js_url, headers=FORWARD_HEADERS)
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            main_js_text = resp.read().decode('utf-8')
+        
+        # Extract Doppio JS name
+        match = re.search(r'require\("./(Doppio[^"]*\.js)"\)', main_js_text)
+        if not match:
+            _error("Doppio JS name not found in main.js")
+            xbmc.executebuiltin('Notification(SC19 Proxy, Key fetch failed: Doppio JS not found, 5000)')
+            return
+        doppio_name = match.group(1)
+        
+        # Fetch Doppio JS
+        doppio_url = f"{origin}/v{version}/{doppio_name}"
+        req = urllib.request.Request(doppio_url, headers=FORWARD_HEADERS)
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            doppio_js_text = resp.read().decode('utf-8')
+        
+        # Extract decode key
+        match = re.search(rf'{re.escape(pkey)}:([^"]+)', doppio_js_text)
+        if not match:
+            _error(f"pkey {pkey} not found in Doppio JS")
+            xbmc.executebuiltin('Notification(SC19 Proxy, Key fetch failed: pkey not found, 5000)')
+            return
+        new_key = match.group(1)
+        
+        # Update addon setting and global cache
+        global _decode_key
+        addon = xbmcaddon.Addon()
+        addon.setSetting('decode_key', new_key)
+        _decode_key = new_key
+        
+        _info(f"Successfully fetched and updated decode key: {new_key[:10]}...")
+        xbmc.executebuiltin('Notification(SC19 Proxy, Decode key updated successfully, 3000)')
+    
     except Exception as e:
-        _error(f"Failed to read decode key from settings: {e}")
-        return None
+        _error(f"Failed to fetch or process data for key fetch: {e}")
+        xbmc.executebuiltin('Notification(SC19 Proxy, Key fetch failed: Check logs, 5000)')
 
 def _pad_b64(s: str) -> str:
     if not s:
@@ -142,41 +214,74 @@ def _is_valid_decrypted_url(url: str) -> bool:
     return bool(re.match(pattern, url))
 
 def _decode_m3u8_mouflon_files(m3u8_text: str) -> str:
-    """Find '#EXT-X-MOUFLON:FILE:<b64>' lines and replace the next media reference 'media.mp4' with decoded filename."""
+    """Find '#EXT-X-MOUFLON:FILE:<b64>' lines and replace the next media reference 'media.mp4' with decoded filename.
+    If key is missing or decryption fails, fetch a new key and retry."""
     if "#EXT-X-MOUFLON" not in m3u8_text:
         return m3u8_text
+    
     lines = m3u8_text.splitlines()
     key = _get_decode_key()
     if key is None:
-        _error("Skipping decryption due to missing decode key. Encrypted streams will not play.")
-        return m3u8_text  # Return original without decoding
+        _info("Decode key missing. Fetching new key.")
+        psch, pkey = _extract_psch_and_pkey(m3u8_text)
+        _getkey_from_site(pkey)
+        key = _get_decode_key()  # Retry after fetch
+        if key is None:
+            _error("Still no decode key after fetch. Returning original m3u8.")
+            return m3u8_text
     
+    # First pass: Attempt decryption
     invalid_decryptions = 0
     for idx, line in enumerate(lines):
         if line.startswith("#EXT-X-MOUFLON:FILE:"):
             enc = line.split(":", 2)[-1].strip()
             dec = _mouflon_decrypt_b64(enc, key)
-            # Find next non-empty line after the tag and replace 'media.mp4' if present
             for j in range(idx + 1, min(len(lines), idx + 6)):
                 candidate = lines[j]
                 if candidate.strip() == "":
                     continue
                 if "media.mp4" in candidate:
                     new_candidate = candidate.replace("media.mp4", dec)
-                    # Validate the full constructed URL
                     if not _is_valid_decrypted_url(new_candidate):
-                        _error(f"Invalid decrypted URL: {new_candidate}. Decode key may be wrong or outdated.")
                         invalid_decryptions += 1
-                        continue  # Skip replacing this one
+                        continue
                     if new_candidate != candidate:
                         lines[j] = new_candidate
                     break
     
+    # If any decryptions failed, fetch new key and retry
     if invalid_decryptions > 0:
-        _error(f"Decryption failed for {invalid_decryptions} segments. Check decode key in key.txt.")
-        # If all decryptions fail, return original to avoid broken stream
-        if invalid_decryptions == len([l for l in lines if l.startswith("#EXT-X-MOUFLON:FILE:")]):
-            _error("All decryptions invalid. Returning original m3u8.")
+        _info(f"Decryption failed for {invalid_decryptions} segments. Fetching new key and retrying.")
+        psch, pkey = _extract_psch_and_pkey(m3u8_text)
+        _getkey_from_site(pkey)
+        new_key = _get_decode_key()
+        if new_key and new_key != key:
+            # Retry with new key
+            lines = m3u8_text.splitlines()  # Reset lines
+            invalid_decryptions = 0
+            for idx, line in enumerate(lines):
+                if line.startswith("#EXT-X-MOUFLON:FILE:"):
+                    enc = line.split(":", 2)[-1].strip()
+                    dec = _mouflon_decrypt_b64(enc, new_key)
+                    for j in range(idx + 1, min(len(lines), idx + 6)):
+                        candidate = lines[j]
+                        if candidate.strip() == "":
+                            continue
+                        if "media.mp4" in candidate:
+                            new_candidate = candidate.replace("media.mp4", dec)
+                            if not _is_valid_decrypted_url(new_candidate):
+                                invalid_decryptions += 1
+                                continue
+                            if new_candidate != candidate:
+                                lines[j] = new_candidate
+                            break
+            if invalid_decryptions == 0:
+                _info("Re-decryption successful with new key.")
+            else:
+                _error(f"Re-decryption still failed for {invalid_decryptions} segments. Returning original m3u8.")
+                return m3u8_text
+        else:
+            _error("No new key available after fetch. Returning original m3u8.")
             return m3u8_text
     
     return "\n".join(lines)
@@ -240,6 +345,26 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 except Exception:
                     print(f"SC19 Proxy: {message}")  # Fallback if xbmc unavailable
         # Otherwise, suppress default logging (do nothing)
+
+    def handle_one_request(self):
+        """Override to catch socket errors during request parsing (e.g., client disconnections)."""
+        try:
+            # Call the parent's method to handle request parsing and dispatch
+            super().handle_one_request()
+        except (ConnectionResetError, ConnectionAbortedError, OSError) as e:
+            # Handle Windows-specific socket errors (10054: remote close, 10053: local abort, etc.)
+            # These occur when the client disconnects during HTTP parsing; log at debug to reduce noise
+            if hasattr(e, 'winerror') and e.winerror in (10054, 10053):
+                _debug("Client disconnected during request parsing: %s" % e)
+            elif isinstance(e, (ConnectionResetError, ConnectionAbortedError)):
+                _debug("Client disconnected during request parsing: %s" % e)
+            else:
+                # Re-raise other OSError (e.g., network issues) or log if unexpected
+                _error("Unexpected socket error during request parsing: %s" % e)
+                raise
+        except Exception as e:
+            # Catch any other unhandled exceptions during parsing to prevent raw errors in Kodi log
+            _error("Unhandled error during request parsing: %s" % e)
 
     def do_HEAD(self):
         """Handle HEAD requests so clients can probe resources (avoid 501)."""
@@ -327,276 +452,279 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         return
 
     def do_GET(self):
-        _debug(f"Handling GET request for {self.path}")
-        
-        path = self.path
-        qs = urllib.parse.urlparse(path).query
-        params = urllib.parse.parse_qs(qs)
-        
-        if 'url' in params:
-            orig = urllib.parse.unquote(params['url'][0])
-        elif path == '/' and _stream_m3u8_url:
-            orig = _stream_m3u8_url
-        elif path.startswith('/') and len(path) > 1:
-            username = path[1:]  # Extract username from /username
-            xbmc.log(f"New connection request for username: {username}", 1)
-            orig = fetch_stream_url(username)
-            if not orig:
-                self.send_response(404)
+        try:  # Top-level try to catch any unhandled exceptions and log them gracefully
+            _debug(f"Handling GET request for {self.path}")
+            
+            path = self.path
+            qs = urllib.parse.urlparse(path).query
+            params = urllib.parse.parse_qs(qs)
+            
+            if 'url' in params:
+                orig = urllib.parse.unquote(params['url'][0])
+            elif path == '/' and _stream_m3u8_url:
+                orig = _stream_m3u8_url
+            elif path.startswith('/') and len(path) > 1:
+                username = path[1:]  # Extract username from /username
+                xbmc.log(f"New connection request for username: {username}", 1)
+                orig = fetch_stream_url(username)
+                if not orig:
+                    self.send_response(404)
+                    self.send_header('Content-Type', 'text/plain')
+                    self.send_header('Connection', 'close')
+                    self.end_headers()
+                    try:
+                        self.wfile.write(b'Stream not found or offline')
+                    except Exception:
+                        pass
+                    return
+                # Log the proxy URL for the master playlist
+                host, port = self.server.server_address  # type: ignore
+                proxy_url = f"http://{host}:{port}/?url={urllib.parse.quote(orig)}"
+                xbmc.log(f"Proxy URL for {username}: {proxy_url}", 1)
+            else:
+                self.send_response(400)
                 self.send_header('Content-Type', 'text/plain')
                 self.send_header('Connection', 'close')
                 self.end_headers()
                 try:
-                    self.wfile.write(b'Stream not found or offline')
+                    self.wfile.write(b'No url parameter or invalid path')
                 except Exception:
                     pass
                 return
-            # Log the proxy URL for the master playlist
-            host, port = self.server.server_address # type: ignore
-            proxy_url = f"http://{host}:{port}/?url={urllib.parse.quote(orig)}"
-            xbmc.log(f"Proxy URL for {username}: {proxy_url}", 1)
-        else:
-            self.send_response(400)
-            self.send_header('Content-Type', 'text/plain')
-            self.send_header('Connection', 'close')
-            self.end_headers()
-            try:
-                self.wfile.write(b'No url parameter or invalid path')
-            except Exception:
-                pass
-            return
 
-        # Early halt if key fault detected and this is a segment request
-        global _key_fault_detected
-        is_playlist = orig.endswith('.m3u8')
-        if _key_fault_detected and not is_playlist:
-            _error("Key fault detected, halting segment request: %s" % orig)
-            self.send_response(403)
-            self.send_header('Content-Type', 'text/plain')
-            self.send_header('Connection', 'close')
-            self.end_headers()
-            try:
-                self.wfile.write(b'Decode key error: Playback halted due to invalid key. Check key.txt.')
-            except Exception:
-                pass
-            return
-
-        # Reset flag on playlist request (allow recovery)
-        if is_playlist:
-            _key_fault_detected = False
-
-        # normalized incoming URL and check init cache (exact or normalized key)
-        norm = _normalize_strip_psch_pkey(orig)
-        cached = _init_cache.get(orig) or _init_cache.get(norm)
-        if cached:
-            try:
-                self.send_response(200)
-                for h, v in cached.get('headers', {}).items():
-                    self.send_header(h, v)
-                self.send_header('Content-Length', str(len(cached['bytes'])))
-                self.send_header('Connection', 'keep-alive')
+            # Early halt if key fault detected and this is a segment request
+            global _key_fault_detected
+            is_playlist = orig.endswith('.m3u8')
+            if _key_fault_detected and not is_playlist:
+                _error("Key fault detected, halting segment request: %s" % orig)
+                self.send_response(403)
+                self.send_header('Content-Type', 'text/plain')
+                self.send_header('Connection', 'close')
                 self.end_headers()
-                self.wfile.write(cached['bytes'])
-            except Exception as e:
-                pass
-            return
+                try:
+                    self.wfile.write(b'Decode key error: Playback halted due to invalid key. Check key.txt.')
+                except Exception:
+                    pass
+                return
 
-        _debug("Incoming request for: %s -> orig: %s" % (self.path, orig))
-
-        # Build upstream headers and forward important client headers
-        upstream_headers = dict(FORWARD_HEADERS)
-        for hdr in ('Range', 'User-Agent', 'Accept', 'Accept-Encoding', 'Referer', 'Origin', 'If-None-Match', 'If-Modified-Since', 'Cookie'):
-            v = self.headers.get(hdr)
-            if v:
-                upstream_headers[hdr] = v
-
-        try:
-            resp = _fetch_with_retries(orig, headers=upstream_headers)
-        except Exception as e:
-            self.send_response(502)
-            self.send_header('Connection', 'close')
-            self.end_headers()
-            try:
-                self.wfile.write(("Proxy fetch failure: %s" % str(e)).encode('utf-8'))
-            except Exception:
-                pass
-            _error("Proxy fetch final failure for %s: %s" % (orig, e))
-            return
-
-        # Check for 418 error (indicates invalid segment URL, likely due to wrong key)
-        if isinstance(resp, urllib.error.HTTPError) and getattr(resp, 'code', None) == 418:
-            _error(f"Upstream returned 418 (invalid segment URL) for {orig}. Decode key may be wrong or outdated.")
-            _key_fault_detected = True  # Set flag to halt further segment requests
-            # For playlists, return custom m3u8 to minimize error dialog
+            # Reset flag on playlist request (allow recovery)
             if is_playlist:
-                custom_playlist = "#EXTM3U\n#EXT-X-VERSION:3\n# Decode key error: Check key.txt for the correct key.\n"
-                body = custom_playlist.encode('utf-8')
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/vnd.apple.mpegurl')
-                self.send_header('Content-Length', str(len(body)))
-                self.send_header('Cache-Control', 'no-cache')
-                self.send_header('Connection', 'keep-alive')
-                self.end_headers()
-                self.wfile.write(body)
+                _key_fault_detected = False
+
+            # normalized incoming URL and check init cache (exact or normalized key)
+            norm = _normalize_strip_psch_pkey(orig)
+            cached = _init_cache.get(orig) or _init_cache.get(norm)
+            if cached:
+                try:
+                    self.send_response(200)
+                    for h, v in cached.get('headers', {}).items():
+                        self.send_header(h, v)
+                    self.send_header('Content-Length', str(len(cached['bytes'])))
+                    self.send_header('Connection', 'keep-alive')
+                    self.end_headers()
+                    self.wfile.write(cached['bytes'])
+                except Exception as e:
+                    pass
                 return
-            # For segments, return 403
-            self.send_response(403)
-            self.send_header('Content-Type', 'text/plain')
-            self.send_header('Connection', 'close')
-            self.end_headers()
+
+            _debug("Incoming request for: %s -> orig: %s" % (self.path, orig))
+
+            # Build upstream headers and forward important client headers
+            upstream_headers = dict(FORWARD_HEADERS)
+            for hdr in ('Range', 'User-Agent', 'Accept', 'Accept-Encoding', 'Referer', 'Origin', 'If-None-Match', 'If-Modified-Since', 'Cookie'):
+                v = self.headers.get(hdr)
+                if v:
+                    upstream_headers[hdr] = v
+
             try:
-                self.wfile.write(b'Decode key error: Invalid segment URL. Check key.txt for the correct key.')
-            except Exception:
-                pass
-            return
-
-        # Pass through other HTTPError statuses
-        if isinstance(resp, urllib.error.HTTPError):
-            code = getattr(resp, 'code', None)
-            self.send_response(code or 502)
-            self.send_header('Connection', 'close')
-            self.end_headers()
-            return
-
-        try:
-            content_type = resp.headers.get_content_type()
-        except Exception:
-            content_type = resp.headers.get('Content-Type', '') or ''
-
-        is_playlist = orig.endswith('.m3u8') or content_type in (
-            'application/vnd.apple.mpegurl', 'application/x-mpegURL', 'text/plain'
-        )
-
-        # Playlist path (rewrite LL-HLS attribute URIs and plain URLs, inject psch/pkey)
-        if is_playlist:
-            try:
-                raw = resp.read()
-                enc = (resp.headers.get('Content-Encoding') or '').lower()
-                if 'gzip' in enc:
-                    try:
-                        raw = gzip.decompress(raw)
-                    except Exception as e:
-                        _debug("Failed to gunzip playlist: %s" % e)
-                text = raw.decode('utf-8', errors='replace')
-
-                text = _decode_m3u8_mouflon_files(text)
-                psch, pkey = _extract_psch_and_pkey(text)
-                host, port = self.server.server_address # type: ignore
-
-                def _inject_and_proxy(abs_url: str) -> str:
-                    # no longer force playlistType=web
-                    pr = urllib.parse.urlsplit(abs_url)
-                    q = urllib.parse.parse_qs(pr.query, keep_blank_values=True)
-                    if psch and 'psch' not in q:
-                        q['psch'] = [psch]
-                    if pkey and 'pkey' not in q:
-                        q['pkey'] = [pkey]
-                    new_q = urllib.parse.urlencode({k: v[0] for k, v in q.items()})
-                    abs2 = urllib.parse.urlunsplit((pr.scheme, pr.netloc, pr.path, new_q, pr.fragment))
-                    return f'http://{host}:{port}/?url=' + urllib.parse.quote(abs2, safe='')
-
-                def _rewrite_uri_attr(line: str) -> str:
-                    m = re.search(r'URI=(?:"([^"]+)"|([^,]+))', line, flags=re.IGNORECASE)
-                    if not m:
-                        return line
-                    uri = (m.group(1) or m.group(2) or '').strip()
-                    if not uri:
-                        return line
-                    absu = _make_absolute(orig, uri)
-                    prox = _inject_and_proxy(absu)
-                    return re.sub(r'URI=(?:"[^"]+"|[^,]+)', f'URI="{prox}"', line, flags=re.IGNORECASE)
-
-                out = []
-                for line in text.splitlines():
-                    s = line.strip()
-                    u = s.upper()
-                    # Rewrite all attribute-URI tags including audio renditions
-                    if (u.startswith('#EXT-X-MEDIA') or
-                        u.startswith('#EXT-X-I-FRAME-STREAM-INF') or
-                        u.startswith('#EXT-X-MAP') or
-                        u.startswith('#EXT-X-PART') or
-                        u.startswith('#EXT-X-PRELOAD-HINT') or
-                        u.startswith('#EXT-X-RENDITION-REPORT')):
-                        out.append(_rewrite_uri_attr(line))
-                        continue
-
-                    # Rewrite plain URL lines (variants or segments)
-                    if s and not s.startswith('#'):
-                        absu = _make_absolute(orig, s)
-                        out.append(_inject_and_proxy(absu))
-                        continue
-
-                    out.append(line)
-
-                body = ("\n".join(out) + "\n").encode('utf-8')
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/vnd.apple.mpegurl')
-                self.send_header('Content-Length', str(len(body)))
-                self.send_header('Cache-Control', 'no-cache')
-                self.send_header('Connection', 'keep-alive')
-                self.end_headers()
-                self.wfile.write(body)
-                return
+                resp = _fetch_with_retries(orig, headers=upstream_headers)
             except Exception as e:
                 self.send_response(502)
                 self.send_header('Connection', 'close')
                 self.end_headers()
-                _error("Error processing playlist response for %s: %s" % (orig, e))
+                try:
+                    self.wfile.write(("Proxy fetch failure: %s" % str(e)).encode('utf-8'))
+                except Exception:
+                    pass
+                _error("Proxy fetch final failure for %s: %s" % (orig, e))
                 return
 
-        # Binary/segment path (supports ranges)
-        upstream_status = getattr(resp, 'status', None) or resp.getcode() or 200
-        try:
-            self.send_response(upstream_status)
-        except Exception:
-            self.send_response(200)
-        for h in ('Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified', 'Cache-Control'):
-            v = resp.headers.get(h)
-            if v:
-                self.send_header(h, v)
-        te = resp.headers.get('Transfer-Encoding')
-        if te:
-            self.send_header('Transfer-Encoding', te)
-        ce = resp.headers.get('Content-Encoding')
-        if ce:
-            self.send_header('Content-Encoding', ce)
-        self.send_header('Connection', 'keep-alive')
-        self.end_headers()
+            # Check for 418 error (indicates invalid segment URL, likely due to wrong key)
+            if isinstance(resp, urllib.error.HTTPError) and getattr(resp, 'code', None) == 418:
+                _error(f"Upstream returned 418 (invalid segment URL) for {orig}. Decode key may be wrong or outdated.")
+                _key_fault_detected = True  # Set flag to halt further segment requests
+                # For playlists, return custom m3u8 to minimize error dialog
+                if is_playlist:
+                    custom_playlist = "#EXTM3U\n#EXT-X-VERSION:3\n# Decode key error: Check key.txt for the correct key.\n"
+                    body = custom_playlist.encode('utf-8')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/vnd.apple.mpegurl')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.send_header('Cache-Control', 'no-cache')
+                    self.send_header('Connection', 'keep-alive')
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                # For segments, return 403
+                self.send_response(403)
+                self.send_header('Content-Type', 'text/plain')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                try:
+                    self.wfile.write(b'Decode key error: Invalid segment URL. Check key.txt for the correct key.')
+                except Exception:
+                    pass
+                return
 
-        # Original streaming logic
-        first = True
-        try:
-            while True:
-                chunk = resp.read(CHUNK_SIZE)
-                if not chunk:
-                    break
-                if first:
-                    if b'ftyp' in chunk or b'moov' in chunk or b'sidx' in chunk:
-                        _debug("Atoms seen in first chunk from %s" % orig)
-                    first = False
-                self.wfile.write(chunk)
-            return
-        except (BrokenPipeError, ConnectionResetError) as e:
-            # Client disconnected (common with Kodi/VLC); log at debug to reduce noise
-            _debug("Client disconnected during streaming for %s: %s" % (orig, e))
-            return
-        except OSError as e:
-            # Handle Windows-specific socket errors (10054: remote close, 10053: local abort)
-            if hasattr(e, 'winerror') and e.winerror in (10054, 10053):
+            # Pass through other HTTPError statuses
+            if isinstance(resp, urllib.error.HTTPError):
+                code = getattr(resp, 'code', None)
+                self.send_response(code or 502)
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                return
+
+            try:
+                content_type = resp.headers.get_content_type()
+            except Exception:
+                content_type = resp.headers.get('Content-Type', '') or ''
+
+            is_playlist = orig.endswith('.m3u8') or content_type in (
+                'application/vnd.apple.mpegurl', 'application/x-mpegURL', 'text/plain'
+            )
+
+            # Playlist path (rewrite LL-HLS attribute URIs and plain URLs, inject psch/pkey)
+            if is_playlist:
+                try:
+                    raw = resp.read()
+                    enc = (resp.headers.get('Content-Encoding') or '').lower()
+                    if 'gzip' in enc:
+                        try:
+                            raw = gzip.decompress(raw)
+                        except Exception as e:
+                            _debug("Failed to gunzip playlist: %s" % e)
+                    text = raw.decode('utf-8', errors='replace')
+
+                    text = _decode_m3u8_mouflon_files(text)
+                    psch, pkey = _extract_psch_and_pkey(text)
+                    host, port = self.server.server_address  # type: ignore
+
+                    def _inject_and_proxy(abs_url: str) -> str:
+                        # no longer force playlistType=web
+                        pr = urllib.parse.urlsplit(abs_url)
+                        q = urllib.parse.parse_qs(pr.query, keep_blank_values=True)
+                        if psch and 'psch' not in q:
+                            q['psch'] = [psch]
+                        if pkey and 'pkey' not in q:
+                            q['pkey'] = [pkey]
+                        new_q = urllib.parse.urlencode({k: v[0] for k, v in q.items()})
+                        abs2 = urllib.parse.urlunsplit((pr.scheme, pr.netloc, pr.path, new_q, pr.fragment))
+                        return f'http://{host}:{port}/?url=' + urllib.parse.quote(abs2, safe='')
+
+                    def _rewrite_uri_attr(line: str) -> str:
+                        m = re.search(r'URI=(?:"([^"]+)"|([^,]+))', line, flags=re.IGNORECASE)
+                        if not m:
+                            return line
+                        uri = (m.group(1) or m.group(2) or '').strip()
+                        if not uri:
+                            return line
+                        absu = _make_absolute(orig, uri)
+                        prox = _inject_and_proxy(absu)
+                        return re.sub(r'URI=(?:"[^"]+"|[^,]+)', f'URI="{prox}"', line, flags=re.IGNORECASE)
+
+                    out = []
+                    for line in text.splitlines():
+                        s = line.strip()
+                        u = s.upper()
+                        # Rewrite all attribute-URI tags including audio renditions
+                        if (u.startswith('#EXT-X-MEDIA') or
+                            u.startswith('#EXT-X-I-FRAME-STREAM-INF') or
+                            u.startswith('#EXT-X-MAP') or
+                            u.startswith('#EXT-X-PART') or
+                            u.startswith('#EXT-X-PRELOAD-HINT') or
+                            u.startswith('#EXT-X-RENDITION-REPORT')):
+                            out.append(_rewrite_uri_attr(line))
+                            continue
+
+                        # Rewrite plain URL lines (variants or segments)
+                        if s and not s.startswith('#'):
+                            absu = _make_absolute(orig, s)
+                            out.append(_inject_and_proxy(absu))
+                            continue
+
+                        out.append(line)
+
+                    body = ("\n".join(out) + "\n").encode('utf-8')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/vnd.apple.mpegurl')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.send_header('Cache-Control', 'no-cache')
+                    self.send_header('Connection', 'keep-alive')
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                except Exception as e:
+                    self.send_response(502)
+                    self.send_header('Connection', 'close')
+                    self.end_headers()
+                    _error("Error processing playlist response for %s: %s" % (orig, e))
+                    return
+
+            # Binary/segment path (supports ranges)
+            upstream_status = getattr(resp, 'status', None) or resp.getcode() or 200
+            try:
+                self.send_response(upstream_status)
+            except Exception:
+                self.send_response(200)
+            for h in ('Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified', 'Cache-Control'):
+                v = resp.headers.get(h)
+                if v:
+                    self.send_header(h, v)
+            te = resp.headers.get('Transfer-Encoding')
+            if te:
+                self.send_header('Transfer-Encoding', te)
+            ce = resp.headers.get('Content-Encoding')
+            if ce:
+                self.send_header('Content-Encoding', ce)
+            self.send_header('Connection', 'keep-alive')
+            self.end_headers()
+
+            # Streaming logic with improved exception handling
+            first = True
+            try:
+                while True:
+                    chunk = resp.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    if first:
+                        if b'ftyp' in chunk or b'moov' in chunk or b'sidx' in chunk:
+                            _debug("Atoms seen in first chunk from %s" % orig)
+                        first = False
+                    self.wfile.write(chunk)
+                return
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as e:
+                # Client disconnected (common with Kodi/VLC/Windows); log at debug to reduce noise
                 _debug("Client disconnected during streaming for %s: %s" % (orig, e))
                 return
-            else:
-                # Re-raise other OSError (e.g., network issues)
-                raise
+            except OSError as e:
+                # Handle Windows-specific socket errors (10054: remote close, 10053: local abort, etc.)
+                if hasattr(e, 'winerror') and e.winerror in (10054, 10053):
+                    _debug("Client disconnected during streaming for %s: %s" % (orig, e))
+                    return
+                else:
+                    # Re-raise other OSError (e.g., network issues)
+                    raise
         except Exception as e:
+            # Catch any unhandled exceptions to prevent raw errors in Kodi log
+            _error("Unhandled error in do_GET for %s: %s" % (self.path, e))
             try:
-                self.send_response(502)
+                self.send_response(500)
+                self.send_header('Content-Type', 'text/plain')
                 self.send_header('Connection', 'close')
                 self.end_headers()
-                self.wfile.write(("Proxy processing error: %s" % str(e)).encode('utf-8'))
+                self.wfile.write(b'Internal server error')
             except Exception:
-                pass
-            _error("Error processing response for %s: %s" % (orig, e))
+                pass  # If even this fails, just return
             return
 
 class HLSProxy:
