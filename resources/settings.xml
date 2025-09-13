@@ -17,6 +17,7 @@
     </category>
     <category label="Stream options">
         <setting id="stream_player" type="enum" values="Default|InputStream FFmpegDirect" default="1" label="Stream player engine" />
+        <setting id="use_variants" type="bool" default="false" label="Use variants (instead of best only quality) playlist" />
         <setting id="use_ffmpeg_timeshift" type="bool" default="false" label="Use FFmpegDirect timeshift" />
     </category>
     <category label="Proxy">
