@@ -1,6 +1,6 @@
 # plugin.video.sc19
 
-A kodi plugin for streaming cams from stripchat.com. Works with all kodi releases 19 and up.
+A kodi addon for streaming cams from Stripchat. Works with all kodi releases 19 and up.
 Integrates a proxy for decoding newly scrambled playlist segment URLs by Stripchat (see notes below).
 
 Tested on Android (Fire TV), Windows and MacOS, should work fine with other Linux systems as well. Not available in a kodi repository, so use "Install from ZIP" in kodi and point to the zip file to install.
