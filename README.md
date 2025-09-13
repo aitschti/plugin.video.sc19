@@ -15,7 +15,7 @@ Tested on Android (Fire TV), Windows and MacOS, should work fine with other Linu
 - View profile details of performer (Use context menu > videos and albums)
 - Shows cam states of performer (idle, private etc.)
 - When streaming a cam use info button for additional info about the room like topic, goal, viewers etc. (if available)
-- Option to use external proxy for decoding (e.g. <https://github.com/aitschti/scp-standalone>)
+- Option to use my external standalone proxy solution for decoding (<https://github.com/aitschti/scp-standalone>)
 - Enable timeshift for playback in settings (Stream options). Check free space on your device! You can look at Inputstream FFmpegDirect settings to set path and max duration.
 - Option to use variants playlist (if you have issues with best quality only)
 - Option to change CDN (default doppiocdn.net, if you have connection issues / are ip blocked)
