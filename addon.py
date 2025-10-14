@@ -416,7 +416,7 @@ def get_favourites():
         url = sys.argv[0] + '?playactor=' + item
         li = xbmcgui.ListItem(item)
         vit = li.getVideoInfoTag()
-        
+
         # Get JSON for model to load avatar, fanart and status
         try:
             if fav_check_online_status:
@@ -434,7 +434,7 @@ def get_favourites():
                 else:
                     snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(data["user"]["user"]['snapshotTimestamp'],data["user"]["user"]['id'])
                     li.setArt({'icon': snap, 'thumb': snap, 'fanart': data["user"]["user"]['previewUrl']})
-            
+
                 # Tag info
                 plot = get_tag_string_for_plot(data["user"]["user"])
                 # Status
@@ -1086,11 +1086,11 @@ def get_username_string_from_status(username, status):
 def get_tag_string_for_plot(item):
     tags = []
     s = "Tags: "
-    if item['isNew']:
+    if item.get('isNew', False):
         tags.append("NEW")
-    if item['isHd'] == True:
+    if item.get('isHd', False) == True:
         tags.append("HD")
-    if item['isVr'] == True:
+    if item.get('isVr', False) == True:
         tags.append("VR")
     if len(tags) == 0:
         return ""
@@ -1102,18 +1102,15 @@ def get_tag_string_for_plot(item):
 def get_prices_string_for_plot(item):
     s = "Token price: "
     s2 = "not set"
-    if "doPrivate" in item and "privateRate" in item:
-        if item['doPrivate'] == True:
-            s += str(item['privateRate']) + " (Pvt) "
-            s2 = ""
-    if "doP2p" in item and "p2pRate" in item:
-        if item['doP2p'] == True:
-            s += str(item['p2pRate']) + " (P2P) "
-            s2 = ""
-    if "doSpy" in item and "spyRate" in item:
-        if item['doSpy'] == True:
-            s += str(item['spyRate']) + " (Spy)"
-            s2 = ""
+    if item.get('doPrivate', False) and item.get('privateRate') is not None:
+        s += str(item['privateRate']) + " (Pvt) "
+        s2 = ""
+    if item.get('doP2p', False) and item.get('p2pRate') is not None:
+        s += str(item['p2pRate']) + " (P2P) "
+        s2 = ""
+    if item.get('doSpy', False) and item.get('spyRate') is not None:
+        s += str(item['spyRate']) + " (Spy)"
+        s2 = ""
     return s + s2
 
 def get_cam_infos_as_items(cams):
