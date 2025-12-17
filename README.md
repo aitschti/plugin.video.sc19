@@ -1,5 +1,7 @@
 # plugin.video.sc19
 
+**DEC '25 UPDATE: FETCHING OF DECODE KEY IS BROKEN DUE TO CHANGES ON STRIPCHAT'S SIDE. PLEASE SET THE DECODE KEY MANUALLY IN THE ADDON SETTINGS TO GET STREAMING WORKING AGAIN. OLD ONE STILL WORKS FOR NOW.**
+
 A kodi addon for streaming cams from Stripchat. Works with all kodi releases 19 and up.
 Integrates a proxy for decoding newly scrambled playlist segment URLs by Stripchat (see notes below).
 
