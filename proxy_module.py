@@ -295,15 +295,22 @@ def _extract_psch_and_pkey(m3u8_text):
             continue
         if l.upper().startswith('#EXT-X-MOUFLON:PSCH'):
             psch_lines.append(l)
-    if psch_lines:
-        # Use the last (second) PSCH line if multiple are found
-        last_line = psch_lines[-1]
-        parts = last_line.split(':', 3)
-        version = parts[2].lower() if len(parts) > 2 else ''
-        pkey = parts[3] if len(parts) > 3 else ''
-        return version, pkey
-        
-    return '', ''
+
+    if not psch_lines:
+        return '', ''
+
+    # Prefer the last 'v1' PSCH line if present
+    v1_lines = []
+    for l in psch_lines:
+        parts_tmp = l.split(':', 3)
+        if len(parts_tmp) > 2 and parts_tmp[2].lower().startswith('v1'):
+            v1_lines.append(l)
+
+    selected_line = v1_lines[-1] if v1_lines else psch_lines[-1]
+    parts = selected_line.split(':', 3)
+    version = parts[2].lower() if len(parts) > 2 else ''
+    pkey = parts[3] if len(parts) > 3 else ''
+    return version, pkey
 
 def _make_absolute(base, ref):
     return urllib.parse.urljoin(base, ref)
@@ -616,11 +623,11 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                     host, port = self.server.server_address  # type: ignore
 
                     def _inject_and_proxy(abs_url: str) -> str:
-                        # no longer force playlistType=web
+                        # Force psch=v1 regardless of what's in the master playlist
                         pr = urllib.parse.urlsplit(abs_url)
                         q = urllib.parse.parse_qs(pr.query, keep_blank_values=True)
-                        if psch and 'psch' not in q:
-                            q['psch'] = [psch]
+                        # Always set psch to v1
+                        q['psch'] = ['v1']
                         if pkey and 'pkey' not in q:
                             q['pkey'] = [pkey]
                         new_q = urllib.parse.urlencode({k: v[0] for k, v in q.items()})
