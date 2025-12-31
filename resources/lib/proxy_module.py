@@ -14,6 +14,7 @@ import time
 import json
 import xbmc
 import xbmcaddon
+import xbmcgui
 
 socket.setdefaulttimeout(5)  # Set default socket timeout
 
@@ -102,8 +103,9 @@ _stream_m3u8_url = None
 _username_m3u8_cache = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
-# Global cache for decode key (synced with addon settings)
+# Global cache for decode key and pkey (synced with addon settings)
 _decode_key = None
+_pkey = None
 
 def _get_decode_key():
     """Get the decode key from Kodi addon settings (cached globally)."""
@@ -114,12 +116,46 @@ def _get_decode_key():
             _decode_key = addon.getSetting('decode_key')
             if not _decode_key:
                 _error("Decode key is empty in addon settings. Playback will fail for encrypted streams.")
+                try:
+                    xbmcgui.Dialog().notification(
+                        'SC19 Proxy Error',
+                        'Decode key (pdkey) is not set in addon settings',
+                        xbmcgui.NOTIFICATION_ERROR,
+                        5000
+                    )
+                except Exception:
+                    pass
                 return None
             _debug("Using decode key from addon settings")
         except Exception as e:
             _error(f"Failed to read decode key from addon settings: {e}")
             return None
     return _decode_key
+
+def _get_pkey():
+    """Get the pkey from Kodi addon settings (cached globally)."""
+    global _pkey
+    if _pkey is None:
+        try:
+            addon = xbmcaddon.Addon()
+            _pkey = addon.getSetting('pkey_key')
+            if not _pkey:
+                _error("pkey is empty in addon settings. Playback will fail for encrypted streams.")
+                try:
+                    xbmcgui.Dialog().notification(
+                        'SC19 Proxy Error',
+                        'pkey is not set in addon settings',
+                        xbmcgui.NOTIFICATION_ERROR,
+                        5000
+                    )
+                except Exception:
+                    pass
+                return None
+            _debug("Using pkey from addon settings")
+        except Exception as e:
+            _error(f"Failed to read pkey from addon settings: {e}")
+            return None
+    return _pkey
 
 
 
@@ -199,7 +235,7 @@ def _decode_m3u8_mouflon_files(m3u8_text: str) -> str:
     return "\n".join(lines)
 
 def _extract_psch_and_pkey(m3u8_text):
-    """Return (psch_version, pkey) from #EXT-X-MOUFLON:PSCH line if present."""
+    """Return (psch_version, pkey) from #EXT-X-MOUFLON:PSCH line, preferring the one matching loaded pkey."""
     psch_lines = []
     for line in m3u8_text.splitlines():
         l = line.strip()
@@ -211,14 +247,38 @@ def _extract_psch_and_pkey(m3u8_text):
     if not psch_lines:
         return '', ''
 
-    # Prefer the last 'v2' PSCH line if present
+    # Get loaded pkey to match against
+    loaded_pkey = _get_pkey()
+    
+    # Collect all v2 PSCH lines
     v2_lines = []
     for l in psch_lines:
         parts_tmp = l.split(':', 3)
         if len(parts_tmp) > 2 and parts_tmp[2].lower().startswith('v2'):
             v2_lines.append(l)
 
-    # Use the last v2 line if available, otherwise the last PSCH line
+    # If we have a loaded pkey, try to find matching v2 line
+    if loaded_pkey and v2_lines:
+        for l in v2_lines:
+            parts = l.split(':', 3)
+            if len(parts) > 3 and parts[3] == loaded_pkey:
+                version = parts[2].lower() if len(parts) > 2 else ''
+                pkey = parts[3] if len(parts) > 3 else ''
+                _debug(f"Found matching pkey in playlist: {pkey}")
+                return version, pkey
+        # Loaded pkey doesn't match any v2 line
+        _error(f"Loaded pkey '{loaded_pkey}' not found in playlist. Using last v2 line.")
+        try:
+            xbmcgui.Dialog().notification(
+                'SC19 Proxy Warning',
+                'Configured pkey not found in playlist',
+                xbmcgui.NOTIFICATION_WARNING,
+                4000
+            )
+        except Exception:
+            pass
+    
+    # Fallback: use last v2 line if available, otherwise last PSCH line
     if v2_lines:
         selected_line = v2_lines[-1]
     else:
