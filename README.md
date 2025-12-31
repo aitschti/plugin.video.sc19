@@ -1,6 +1,6 @@
 # plugin.video.sc19
 
-**DEC '25 UPDATE: FETCHING OF DECODE KEY IS BROKEN DUE TO CHANGES ON STRIPCHAT'S SIDE. PLEASE SET THE DECODE KEY MANUALLY IN THE ADDON SETTINGS TO GET STREAMING WORKING AGAIN. OLD ONE STILL WORKS FOR NOW.**
+**DEC '25 UPDATE: ADDED SUPPORT FOR LATEST CHANGE BY SC. OLD KEY STILL WORKS FOR NOW. COMING UPDATE WILL INTRODUCE MORE FLEXIBLE KEY USAGE IN SETTINGS. YOU WILL NEED TO ENTER A KEY PAIR IN SETTINGS**
 
 A kodi addon for streaming cams from Stripchat. Works with all kodi releases 19 and up.
 Integrates a proxy for decoding newly scrambled playlist segment URLs by Stripchat (see notes below).
@@ -30,7 +30,7 @@ Tested on Android (Fire TV), Windows and MacOS, should work fine with other Linu
 - Install the addon from the ZIP file in Kodi.
 - **Proxy Setup (using internal proxy)**: The addon uses a proxy for streaming. Ensure the proxy port (default 8099) is available and not in use by other applications. You can configure the port in the addon settings.
 - **Favourites**: Set a path for a backup location of the favourites database for easy backup and restore and sharing with other clients in your network.
-- **Decode Key**: On first playback or on key changes on Stripchat's side, the addon will attempt to fetch the decode key automatically. This key is essential for decrypting stream URLs (using internal proxy). You can also set the key manually in the settings if needed.
+- **Decode Key**: This key is essential for decrypting stream URLs (using internal proxy). You need to set the key manually in the settings if needed.
 
 ## Recommended settings / tips
 
@@ -41,15 +41,13 @@ Tested on Android (Fire TV), Windows and MacOS, should work fine with other Linu
 
 ## Notes regarding Stripchat's streaming changes
 
-As of late August 2025 Stripchat started implementing measures to prevent easy streaming of their content outside of their site by scrambling the stream URLs in the m3u8 playlist files and the need to pass additional URL parameters to even get the initial m3u8 playlist. They do that by using custom playlist tags in the playlist files containing the scrambled segment filenames which need to be decoded first and then some string replacement is done to get the actual stream URLs.
+As of late August 2025 Stripchat started implementing measures to prevent easy streaming of their content outside of their site by scrambling the stream URLs in the m3u8 playlist files.
 
 By doing that, no normal HLS capable player can simply use the m3u8 URL to stream the content without first decrypting the segment filenames.
 
 To solve this, we can use a proxy that takes the requested m3u8 file, decrypts the segment filenames and serves a modified m3u8 file to the player with the correct stream URLs.
 
-The decryption needs a key, which is also served by Stripchat in an kind of obfuscated way. The addon can fetch this key automatically (if not set manually in settings). This may break at any time if Stripchat changes their obfuscation method.
-
-Outlook: They already serve a "v1" attribute in the m3u8 files, which may suggest upcoming changes to their streaming protocol or additional security measures, maybe even encrypting the stream data. So stay tuned.
+The decryption needs a key, which is also served by Stripchat in an obfuscated way. The needs to be set manually in settings. This may break at any time if Stripchat changes their methods.
 
 ## License
 
