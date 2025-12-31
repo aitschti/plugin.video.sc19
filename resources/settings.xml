@@ -22,7 +22,9 @@
     </category>
     <category label="Proxy">
         <setting id="proxy_port" type="number" default="8099" label="Internal HLS proxy port (default = 8099)" />
-        <setting id="decode_key" type="text" default="" label="HLS playlist decode Key" help="Enter the decode key for playlist decryption" />
+        <setting id="pkey_key" type="text" default="" label="Playlist key selection (pkey)" help="Enter the pkey here" />
+        <setting id="decode_key" type="text" default="" label="Playlist decode Key (pdkey)" help="Enter the decode key here" />
+        <setting id="import_keys" type="action" label="Import keys from file (pkey:pdkey)" enable="true" option="close" action="RunPlugin(plugin://plugin.video.sc19/?tool=import-keys)" />
         <setting id="use_external_proxy" type="bool" label="Use external proxy instead (e.g. scp-standalone)" default="false" />
         <setting id="external_proxy_ip" type="text" default="" label="External proxy IP" />
         <setting id="external_proxy_port" type="number" default="8099" label="External proxy port (default = 8099)" />
