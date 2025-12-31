@@ -168,6 +168,72 @@ def tool_fav_update():
     # Run the update
     update_favourites_user_ids(force=force, show_dialog=True)
 
+def tool_import_keys():
+    """Import pkey and pdkey from a text file selected by the user."""
+    # Open file browser to select text file
+    selected_file = xbmcgui.Dialog().browseSingle(
+        1,  # Type: ShowAndGetFile
+        "Select Keys File (format: pkey:pdkey)",
+        "files",
+        "*.txt|*.TXT|*.*",
+        False,
+        False,
+        ""
+    )
+    
+    if not selected_file:
+        # User cancelled
+        return
+    
+    # Read and parse the file
+    try:
+        # Read file content
+        file_handle = xbmcvfs.File(selected_file)
+        content = file_handle.read()
+        file_handle.close()
+        
+        # Decode if bytes
+        if isinstance(content, bytes):
+            content = content.decode('utf-8')
+        
+        # Strip whitespace
+        content = content.strip()
+        
+        if not content:
+            xbmcgui.Dialog().ok("Import Keys", "Error: File is empty.")
+            return
+        
+        # Parse format: pkey:pdkey
+        if ':' not in content:
+            xbmcgui.Dialog().ok("Import Keys", "Error: Invalid format. Expected format: pkey:pdkey\nExample: Zeechoej4aleeshi:ubahjae7goPoodi6")
+            return
+        
+        parts = content.split(':', 1)
+        if len(parts) != 2:
+            xbmcgui.Dialog().ok("Import Keys", "Error: Invalid format. Expected format: pkey:pdkey")
+            return
+        
+        pkey = parts[0].strip()
+        pdkey = parts[1].strip()
+        
+        if not pkey or not pdkey:
+            xbmcgui.Dialog().ok("Import Keys", "Error: pkey or pdkey is empty in the file.")
+            return
+        
+        # Set both values in addon settings
+        ADDON.setSetting('pkey_key', pkey)
+        ADDON.setSetting('decode_key', pdkey)
+        
+        # Show success dialog and prompt to restart Kodi
+        xbmcgui.Dialog().ok(
+            "Import Keys - Success",
+            f"Keys imported successfully!\n\npkey: {pkey[:20]}...\npdkey: {pdkey[:20]}...\n\nPlease restart Kodi to reload the proxy with the new keys."
+        )
+        
+    except Exception as e:
+        xbmcgui.Dialog().ok("Import Keys", f"Error reading or parsing file:\n{str(e)}")
+        xbmc.log(f"SC19 Import Keys Error: {e}", level=xbmc.LOGERROR)
+
 def format_timestamp_to_local(timestamp):
     """Convert UTC timestamp to local time"""
     try:
