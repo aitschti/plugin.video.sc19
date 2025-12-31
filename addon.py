@@ -111,7 +111,8 @@ SITE_CATS_T     = (("Search", "fuzzy/trans", "Search for cams in trans category"
 SITE_TOOLS = (("Backup Favourites", "tool=fav-backup", "Backup favourites (Set backup location in settings first)."),
               ("Restore Favourites", "tool=fav-restore", "Restore your favourites from backup location."),
               ("Delete Thumbnails", "tool=thumbnails-delete", "Delete cached stripchat related thumbnail files and database entries."),
-              ("Update Model IDs", "tool=fav-update", "Update favourites DB (model IDs)."))
+              ("Update Model IDs", "tool=fav-update", "Update favourites DB (model IDs)."),
+              ("Import Keys from File", "tool=import-keys", "Import pkey and pdkey from a text file (format: pkey:pdkey)."))
 
 # Strings
 STRINGS = {
@@ -193,7 +194,8 @@ def handle_tool(tool):
         "fav-backup": sc19.tool_fav_backup,
         "fav-restore": sc19.tool_fav_restore,
         "thumbnails-delete": sc19.tool_thumbnails_delete,
-        "fav-update": sc19.tool_fav_update
+        "fav-update": sc19.tool_fav_update,
+        "import-keys": sc19.tool_import_keys
     }
     if tool in tool_map:
         tool_map[tool]()
