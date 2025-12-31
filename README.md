@@ -1,6 +1,6 @@
 # plugin.video.sc19
 
-**DEC '25 UPDATE: ADDED SUPPORT FOR LATEST CHANGE BY SC. OLD KEY STILL WORKS FOR NOW. COMING UPDATE WILL INTRODUCE MORE FLEXIBLE KEY USAGE IN SETTINGS. YOU WILL NEED TO ENTER A KEY PAIR IN SETTINGS**
+**DEC 31 '25 UPDATE: ADDED SUPPORT FOR LATEST PLAYLIST CHANGES BY STRIPCHAT. YOU NEED TO ENTER BOTH PKEY AND PDKEY IN SETTINGS (OR IMPORT FROM FILE).**
 
 A kodi addon for streaming cams from Stripchat. Works with all kodi releases 19 and up.
 Integrates a proxy for decoding newly scrambled playlist segment URLs by Stripchat (see notes below).
@@ -21,7 +21,7 @@ Tested on Android (Fire TV), Windows and MacOS, should work fine with other Linu
 - Enable timeshift for playback in settings (Stream options). Check free space on your device! You can look at Inputstream FFmpegDirect settings to set path and max duration.
 - Option to use variants playlist (if you have issues with best quality only)
 - Option to change CDN (default doppiocdn.net, if you have connection issues / are ip blocked)
-- Automatic decode key fetching for scrambled segment filenames (v2.1.0+). If you have issues, set key manually in settings.
+- Import keys from text file for easy setup (format: pkey:pdkey)
 
 ## Usage
 
@@ -30,7 +30,7 @@ Tested on Android (Fire TV), Windows and MacOS, should work fine with other Linu
 - Install the addon from the ZIP file in Kodi.
 - **Proxy Setup (using internal proxy)**: The addon uses a proxy for streaming. Ensure the proxy port (default 8099) is available and not in use by other applications. You can configure the port in the addon settings.
 - **Favourites**: Set a path for a backup location of the favourites database for easy backup and restore and sharing with other clients in your network.
-- **Decode Key**: This key is essential for decrypting stream URLs (using internal proxy). You need to set the key manually in the settings if needed.
+- **Keys (pkey & pdkey)**: Both keys are required for decrypting stream URLs. Set them manually in settings (Proxy section) or import from a text file (format: `pkey:pdkey`). Access via Settings > Proxy > Import keys from file, or Tools menu.
 
 ## Recommended settings / tips
 
@@ -47,7 +47,7 @@ By doing that, no normal HLS capable player can simply use the m3u8 URL to strea
 
 To solve this, we can use a proxy that takes the requested m3u8 file, decrypts the segment filenames and serves a modified m3u8 file to the player with the correct stream URLs.
 
-The decryption needs a key, which is also served by Stripchat in an obfuscated way. The needs to be set manually in settings. This may break at any time if Stripchat changes their methods.
+The decryption requires two keys (pkey and pdkey), which must be set in addon settings. These can be entered manually or imported from a text file (format: `pkey:pdkey`). Keys may need updating if Stripchat changes their methods.
 
 ## License
 
