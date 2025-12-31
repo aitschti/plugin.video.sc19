@@ -1,50 +1,37 @@
 import os
 import sys
 import json
+from time import time
 import xbmc
 import xbmcgui
 import xbmcaddon
 import xbmcplugin
-import xbmcvfs
-import sqlite3
 import re
-import urllib.request
 import urllib.parse
 import urllib.error
 import socket
-import threading
-from datetime import datetime, timedelta
-import proxy_module
+from resources.lib import proxy_module
+from resources.lib import utils as sc19
 
-# Config constants
+
+# Common config constants (avilable in all modules)
 ADDON_NAME = "plugin.video.sc19"
 ADDON_SHORTNAME = "SC19"
-BASE_DIR = os.path.dirname(__file__)
-DB_FAVOURITES_FILE = "favourites-sc.db"
-DB_FAVOURITES = xbmcvfs.translatePath("special://profile/addon_data/%s/%s" % (ADDON_NAME, DB_FAVOURITES_FILE))
-DB_TEXTURES = xbmcvfs.translatePath("special://userdata/Database/Textures13.db")
-PATH_THUMBS = xbmcvfs.translatePath("special://userdata/Thumbnails/")
-PROXY_SCRIPT_PATH = os.path.join(BASE_DIR, 'sc-proxy.py')
+ADDON = xbmcaddon.Addon(id=ADDON_NAME)
+
+# Module specific constants
+SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
 
 # Global proxy instance
 _proxy_instance = None
 
-# Queries
-Q_THUMBNAILS = "SELECT url,cachedurl FROM texture WHERE url LIKE '%.strpst.com%'"
-Q_DEL_THUMBNAILS = "DELETE FROM texture WHERE url LIKE '%.strpst.com%'"
-
 # Addon init
 PLUGIN_ID = int(sys.argv[1])
-ADDON = xbmcaddon.Addon(id=ADDON_NAME)
 
 # Paths
 ART_FOLDER = ADDON.getAddonInfo('path') + '/resources/media/'
 
-# URLs and headers for requests
-SITE_URL = "https://stripchat.com"
-SITE_REFFERER = "https://stripchat.com/"
-SITE_ORIGIN = "https://stripchat.com"
-SITE_ACCEPT = "text/html"
+# API endpoints
 API_ENDPOINT_MODELS = "https://stripchat.com/api/front/models"
 API_ENDPOINT_MODELS_FILTER = "https://stripchat.com/api/front/models?&limit={0}&offset={1}&primaryTag={2}&filterGroupTags=[[\"{3}\"]]&sortBy={4}"
 API_ENDPOINT_MODEL  = "https://stripchat.com/api/front/v2/models/username/{0}/cam"
@@ -54,11 +41,6 @@ API_ENDPOINT_ALBUM = "https://stripchat.com/api/front/users/username/{0}/albums/
 API_ENDPOINT_VIDEOS = "https://stripchat.com/api/front/v2/users/username/{0}/videos"
 API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/username?query={0}&primaryTag={1}&limit=99"
 
-SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
-
-# User agent(s)
-USER_AGENT = " Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.182 Safari/537.36"
-
 # Site specific constants
 LIST_LIMITS = [10, 25, 50, 75, 99]
 LIST_LIMIT = LIST_LIMITS[ADDON.getSettingInt('list_limit')]
@@ -66,7 +48,9 @@ SORT_BY_OPTIONS = ["stripRanking", "trending"]
 SORT_BY_STD = SORT_BY_OPTIONS[ADDON.getSettingInt('sort_by')]
 PRIMARY_TAG = "girls"
 DEL_THUMBS_ON_STARTUP = ADDON.getSettingBool('del_thumbs_on_startup')
-REQUEST_TIMEOUT = ADDON.getSettingInt('request_timeout')
+
+# Threading
+MAX_WORKERS = ADDON.getSettingInt('max_workers')
 
 USER_STATES = {
     'public' : '',
@@ -126,7 +110,8 @@ SITE_CATS_T     = (("Search", "fuzzy/trans", "Search for cams in trans category"
                    ("New cams", "category/trans/autoTagNew", ""))
 SITE_TOOLS = (("Backup Favourites", "tool=fav-backup", "Backup favourites (Set backup location in settings first)."),
               ("Restore Favourites", "tool=fav-restore", "Restore your favourites from backup location."),
-              ("Delete Thumbnails", "tool=thumbnails-delete", "Delete cached stripchat related thumbnail files and database entries."))
+              ("Delete Thumbnails", "tool=thumbnails-delete", "Delete cached stripchat related thumbnail files and database entries."),
+              ("Update Model IDs", "tool=fav-update", "Update favourites DB (model IDs)."))
 
 # Strings
 STRINGS = {
@@ -135,7 +120,8 @@ STRINGS = {
     'unknown_status' : 'Unkown status: ',
     'not_live' : 'User is not live at the moment',
     'not_found' : 'Account not found. It may have been deleted.',
-    'deactivated' : 'This account is deactivated'
+    'deactivated' : 'This account is deactivated',
+    'disabled' : 'This account is disabled',
 }
 
 def evaluate_request():
@@ -204,9 +190,10 @@ def evaluate_request():
 
 def handle_tool(tool):
     tool_map = {
-        "fav-backup": tool_fav_backup,
-        "fav-restore": tool_fav_restore,
-        "thumbnails-delete": tool_thumbnails_delete
+        "fav-backup": sc19.tool_fav_backup,
+        "fav-restore": sc19.tool_fav_restore,
+        "thumbnails-delete": sc19.tool_thumbnails_delete,
+        "fav-update": sc19.tool_fav_update
     }
     if tool in tool_map:
         tool_map[tool]()
@@ -240,140 +227,8 @@ def get_menu(param):
     xbmcplugin.addDirectoryItems(PLUGIN_ID, items)
     xbmcplugin.endOfDirectory(PLUGIN_ID)
 
-def tool_fav_backup():
-    path = ADDON.getSetting('fav_path_backup')
-    source = DB_FAVOURITES
-    destination = path + DB_FAVOURITES_FILE
-    
-    if path == "":
-        xbmcgui.Dialog().ok("Backup Favourites", "Backup path is empty. Please set a valid path in settings menu under \"Favourites\" first.")  
-        xbmcaddon.Addon(id=ADDON_NAME).openSettings()
-    else:
-        # Ask for confirmation before backup
-        if xbmcgui.Dialog().yesno("Backup Favourites", "Do you really want to backup your favourites database?\nThis will overwrite any existing backup file.",
-                                  yeslabel="Yes, backup", nolabel="Cancel"):
-            if xbmcvfs.exists(source):
-                if xbmcvfs.copy(source, destination):
-                    xbmcgui.Dialog().ok("Backup Favourites", "Backup of favourites to backup path succesful.")
-                else:
-                    xbmcgui.Dialog().ok("Backup Favourites", "Something went wrong.")
-            else:
-                xbmcgui.Dialog().ok("Backup Favourites", "Favourites file is empty. Nothing to backup.")
-
-def tool_fav_restore():
-    path = ADDON.getSetting('fav_path_backup')
-    source = path + DB_FAVOURITES_FILE
-    destination = DB_FAVOURITES
-    
-    if path == "":
-        xbmcgui.Dialog().ok("Restore Favourites", "Restore path is empty. Please set a valid path in settings menu under \"Favourites\" first.")  
-        xbmcaddon.Addon(id=ADDON_NAME).openSettings()
-    else:
-        if xbmcvfs.exists(source):
-            # Ask for confirmation before restore
-            if xbmcgui.Dialog().yesno("Restore Favourites", "Do you really want to restore your favourites database?\nThis will overwrite your current favourites!", 
-                                      yeslabel="Yes, restore", nolabel="Cancel"):
-                if xbmcvfs.copy(source, destination):
-                    xbmcgui.Dialog().ok("Restore Favourites", "Restore of favourites succesful.")
-                else:
-                    xbmcgui.Dialog().ok("Restore Favourites", "Something went wrong.")
-        else:
-            xbmcgui.Dialog().ok("Restore Favourites", "No valid file found in restore location. Make a backup first or check location.")
-
-def format_timestamp_to_local(timestamp):
-    """Convert UTC timestamp to local time"""
-    try:
-        if not timestamp:
-            return "Unknown"
-            
-        # Create datetime object directly from ISO format
-        utc_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        
-        # Get local timezone offset
-        import time
-        offset = -time.timezone
-        if time.daylight:
-            offset = -time.altzone
-            
-        # Apply timezone offset
-        local_time = utc_time + timedelta(seconds=offset)
-        
-        # Format according to locale settings
-        local_format = "%Y-%m-%d %H:%M:%S"
-        if xbmc.getRegion('datelong') and xbmc.getRegion('time'):
-            local_format = f"{xbmc.getRegion('datelong')} {xbmc.getRegion('time')}"
-            
-        return local_time.strftime(local_format)
-        
-    except Exception as e:
-        xbmc.log(f"{ADDON_SHORTNAME}: Error in format_timestamp_to_local: {str(e)}", xbmc.LOGERROR)
-        return str(timestamp)
-
-def format_timestamp_relative(timestamp):
-    """Convert UTC timestamp to relative time difference"""
-    try:
-        if not timestamp:
-            return "Unknown"
-            
-        # Create datetime object from ISO format
-        utc_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        
-        # Get current time in UTC
-        now = datetime.now(utc_time.tzinfo)
-        
-        # Calculate time difference
-        diff = now - utc_time
-        
-        # Convert to total seconds
-        seconds = diff.total_seconds()
-        
-        # Less than an hour
-        if seconds < 3600:
-            minutes = int(seconds / 60)
-            return f"{minutes} {'minute' if minutes == 1 else 'minutes'} ago"
-            
-        # Less than a day
-        elif seconds < 86400:
-            hours = int(seconds / 3600)
-            return f"{hours} {'hour' if hours == 1 else 'hours'} ago"
-            
-        # Less than a week
-        elif seconds < 604800:
-            days = int(seconds / 86400)
-            return f"{days} {'day' if days == 1 else 'days'} ago"
-            
-        # Less than a month (approximately)
-        elif seconds < 2592000:
-            weeks = int(seconds / 604800)
-            return f"{weeks} {'week' if weeks == 1 else 'weeks'} ago"
-            
-        # Less than a year
-        elif seconds < 31536000:
-            months = int(seconds / 2592000)
-            return f"{months} {'month' if months == 1 else 'months'} ago"
-            
-        # More than a year
-        else:
-            years = int(seconds / 31536000)
-            return f"{years} {'year' if years == 1 else 'years'} ago"
-            
-    except Exception as e:
-        xbmc.log(f"{ADDON_SHORTNAME}: Error in format_timestamp_relative: {str(e)}", xbmc.LOGERROR)
-        return str(timestamp)
-
-def connect_favourites_db():
-    "Connect to favourites database and create one, if it does not exist."
-
-    db_con = sqlite3.connect(DB_FAVOURITES)
-    c = db_con.cursor()
-    try:
-        c.execute("SELECT * FROM favourites;")
-    except sqlite3.OperationalError:
-        c.executescript("CREATE TABLE favourites (user primary key);")
-    return db_con
-
 def get_profile_data(item):
-    data = get_site_page_full(API_ENDPOINT_MODEL.format(item))
+    data = sc19.get_data_from_page(API_ENDPOINT_MODEL.format(item))
     data = json.loads(data)
     xbmc.log("AVATAR URL: " + data["user"]["user"]["avatarUrl"], 1)
     return data["user"]["user"]["avatarUrl"]
@@ -383,16 +238,27 @@ def get_favourites():
     
     # Clean Thumbnails before opening the list
     if DEL_THUMBS_ON_STARTUP:
-        tool_thumbnails_delete2()
+        sc19.tool_thumbnails_delete_from_db()
 
     # Connect to favourites db
-    db_con = connect_favourites_db()
+    db_con = sc19.connect_favourites_db()
     conn = db_con.cursor()
-    conn.execute("SELECT * FROM favourites")
+    # Explicitly select both columns so we keep user_id for later use
+    conn.execute("SELECT user, user_id FROM favourites")
     res = []
-    for (user) in conn.fetchall():
-        res.append((user[0]))
-    res.sort()
+    for row in conn.fetchall():
+        username = row[0]
+        user_id = row[1] if len(row) > 1 else None
+        res.append((username, user_id))
+    # Sort by username case-insensitive
+    res.sort(key=lambda x: x[0].lower())
+
+    # If no favourites found, notify the user and exit
+    if not res:
+        xbmcgui.Dialog().ok("Favourites", "No favourites available. Please add some first.")
+        xbmcplugin.endOfDirectory(PLUGIN_ID, succeeded=False)
+        xbmc.executebuiltin("Container.Update(%s)" % (sys.argv[0],))
+        return
 
     # Settings
     fav_default_icon = ADDON.getSettingBool('fav_default_icon')
@@ -401,64 +267,118 @@ def get_favourites():
     # Progress bar
     prg = xbmcgui.DialogProgress()
     prg.create("Scanning favourites", "0 from " + str(len(res)) ) 
-    n = 0
-    i = 0
-    chunk = 100/len(res)
+    
     # Build kodi listitems for virtual directory
     items = []
+    
+    # Pre-fetch all user data in parallel
+    user_data_dict = {}
+    image_availability = {}
+    
+    if fav_check_online_status:
+        # Fetch all user data in parallel
+        prg.update(0, "Fetching user data...")
+        usernames = [username for username, user_id in res]
+        user_data_dict = sc19.fetch_user_data_parallel(usernames, API_ENDPOINT_MODEL, MAX_WORKERS)
+    else:
+        # Check snapshot availability in parallel (existing behavior)
+        timestamp = int(time())
+        urls_to_check = []
+        
+        for username, user_id in res:
+            if user_id:
+                snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(timestamp, user_id)
+                urls_to_check.append((username, snap))
+        
+        if urls_to_check:
+            prg.update(0, "Checking snapshot availability...")
+            image_availability = sc19.check_images_parallel(urls_to_check, MAX_WORKERS)
+    
+    # Now build the list items with pre-fetched data
+    n = 0
+    chunk = 100/len(res)
+    i = 0
+    
     for item in res:
+        username, user_id = item
+        
         # Cancel scanning
         if prg.iscanceled():
-            fav_check_online_status = False
+            break
+            
         n += 1
         i += chunk
-        prg.update(int(i), "Favourite " + str(n) + " from " + str(len(res)) + " ( " + item + " )")
-        url = sys.argv[0] + '?playactor=' + item
-        li = xbmcgui.ListItem(item)
+        prg.update(int(i), "Processing " + str(n) + " from " + str(len(res)) + " ( " + username + " )")
+        
+        url = sys.argv[0] + '?playactor=' + username
+        li = xbmcgui.ListItem(username)
+        
+        # expose user_id on the item for future use (if available)
+        if user_id:
+           li.setProperty('sc_user_id', str(user_id))
         vit = li.getVideoInfoTag()
 
         # Get JSON for model to load avatar, fanart and status
         try:
             if fav_check_online_status:
-                data = get_site_page_full(API_ENDPOINT_MODEL.format(item))
-                data = json.loads(data)
-            
-                status = data["user"]["user"]['status']
-                username = get_username_string_from_status(item, status)
-                # Show avatar if not live
-                if not status == "public":
-                    if fav_default_icon:
-                        li.setArt({'icon': get_icon_from_status(status), 'fanart': data["user"]["user"]['previewUrl']})
+                # Use pre-fetched data
+                data = user_data_dict.get(username)
+                
+                if data and "user" in data:
+                    status = data["user"]["user"]['status']
+                    username_display = get_username_string_from_status(username, status)
+                    
+                    # Show avatar if not live
+                    if not status == "public":
+                        if fav_default_icon:
+                            li.setArt({'icon': get_icon_from_status(status), 'fanart': data["user"]["user"]['previewUrl']})
+                        else:
+                            li.setArt({'icon': data["user"]["user"]["avatarUrl"], 'fanart': data["user"]["user"]['previewUrl']})
                     else:
-                        li.setArt({'icon': data["user"]["user"]["avatarUrl"], 'fanart': data["user"]["user"]['previewUrl']})
-                else:
-                    snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(data["user"]["user"]['snapshotTimestamp'],data["user"]["user"]['id'])
-                    li.setArt({'icon': snap, 'thumb': snap, 'fanart': data["user"]["user"]['previewUrl']})
+                        snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(data["user"]["user"]['snapshotTimestamp'],data["user"]["user"]['id'])
+                        li.setArt({'icon': snap, 'thumb': snap, 'fanart': data["user"]["user"]['previewUrl']})
 
-                # Tag info
-                plot = get_tag_string_for_plot(data["user"]["user"])
-                # Status
-                plot += "Status: " + status + "\n"
-                # Prices
-                plot += get_prices_string_for_plot(data["user"]["user"])
-                # Set plot
-                vit.setPlot(plot)
-            # Just list names
+                    # Tag info
+                    plot = get_tag_string_for_plot(data["user"]["user"])
+                    # Status
+                    plot += "Status: " + status + "\n"
+                    # Prices
+                    plot += get_prices_string_for_plot(data["user"]["user"])
+                    # Set plot
+                    vit.setPlot(plot)
+                else:
+                    # Data fetch failed
+                    username_display = username + " (n/a)"
+                    vit.setPlot('Userdata cannot be retrieved at this point! This may be temporary. Check profile on website, if it still exists.')
             else:
-                username = item
-                li.setArt({'icon': 'DefaultVideo.png', 'thumb': 'DefaultVideo.png'})
+                # Just list names (existing behavior)
+                username_display = username
+                timestamp = int(time())
+                
+                if user_id:
+                    snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(timestamp, user_id)
+                    # Use pre-checked result
+                    if image_availability.get(username, False):
+                        li.setArt({'icon': snap, 'thumb': snap, 'fanart': 'DefaultVideo.png'})
+                    else:
+                        # Use offline icon if snapshot doesn't exist
+                        li.setArt({'icon': get_icon_from_status('off'), 'thumb': get_icon_from_status('off'), 'fanart': 'DefaultVideo.png'})
+                else:
+                    # No user_id available -> use default icon/thumb and fanart
+                    li.setArt({'icon': 'DefaultVideo.png', 'thumb': 'DefaultVideo.png', 'fanart': 'DefaultVideo.png'})
                 
         except Exception as e:
-            # User does not exist anymore
-            username = item + " (DEL)"
-            vit.setPlot('Username does not exist (anymore)!')
-        li.setLabel(username)
-        #Set title
-        vit.setTitle(username)
+            # User data cannot be retrieved
+            username_display = username + " (n/a)"
+            vit.setPlot('Userdata cannot be retrieved at this point! This may be temporary. Check profile on website, if it still exists.')
+            
+        li.setLabel(username_display)
+        # Set title
+        vit.setTitle(username_display)
         # Clear playcount for directory items
         vit.setPlaycount(0)
         # Context menu        
-        li.addContextMenuItems(get_ctx_for_cam_item(item, True), True)
+        li.addContextMenuItems(get_ctx_for_cam_item(username, True), True)
         # Append to list
         items.append((url, li, False))
 
@@ -467,6 +387,11 @@ def get_favourites():
     xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_LABEL)
     xbmcplugin.addDirectoryItems(PLUGIN_ID, items)
     xbmcplugin.endOfDirectory(PLUGIN_ID)
+    # Close DB connection
+    try:
+        db_con.close()
+    except Exception:
+        pass
 
 def get_cams_by_category():
     """List available cams by category"""
@@ -499,7 +424,7 @@ def get_cams_by_category():
     xbmc.log("URL: " + url, 1)
 
     try:
-        data = get_site_page_full(url)
+        data = sc19.get_data_from_page(url)
         cams = json.loads(data)
         
         # result for category has a filteredCount value
@@ -558,7 +483,7 @@ def get_viewers_count(actor):
     url = API_ENDPOINT_MEMBERS.format(actor)
     
     try:
-        data = get_site_page_full(url)
+        data = sc19.get_data_from_page(url)
         data = json.loads(data)
         viewers = data["guests"] + data["spies"] + data["invisibles"] + data["greens"] + data["golds"] + data["regulars"]
         return viewers
@@ -572,7 +497,7 @@ def get_albums(actor):
     show_all = ADDON.getSettingBool('ctx_show_all_albums')
     
     try:
-        data = get_site_page_full(API_ENDPOINT_ALBUMS.format(actor))
+        data = sc19.get_data_from_page(API_ENDPOINT_ALBUMS.format(actor))
         data = json.loads(data)
         data = data['albums']
         #xbmc.log(str(data), 1)
@@ -639,7 +564,7 @@ def get_albums(actor):
             
 def get_album(actor, id):
     try:
-        data = get_site_page_full(API_ENDPOINT_ALBUM.format(actor,id))
+        data = sc19.get_data_from_page(API_ENDPOINT_ALBUM.format(actor,id))
         data = json.loads(data)
         
         data = data['photos']
@@ -676,7 +601,7 @@ def get_videos(actor):
     show_all = ADDON.getSettingBool('ctx_show_all_videos')
     
     try:
-        data = get_site_page_full(API_ENDPOINT_VIDEOS.format(actor))
+        data = sc19.get_data_from_page(API_ENDPOINT_VIDEOS.format(actor))
         data = json.loads(data)
         data = data['videos']
         
@@ -766,7 +691,7 @@ def show_picture(url):
 def slideshow2(actor, id):
     #xbmcgui.Dialog().ok("Slideshow", "Actor: " + actor + " Id: " + str(id))
     try:
-        data = get_site_page_full(API_ENDPOINT_ALBUM.format(actor,id))
+        data = sc19.get_data_from_page(API_ENDPOINT_ALBUM.format(actor,id))
         data = json.loads(data)
         
         data = data['photos']
@@ -802,7 +727,7 @@ def slideshow(actor, id):
     xbmc.executebuiltin("ActivateWindow(Pictures,"+ sys.argv[0] + '?getalbum=' + actor + "&id=" + id +")")
 
 def get_picture(url):
-    data = get_site_page_full(url)
+    data = sc19.get_data_from_page(url)
     return data
 
 def play_actor(actor, genre="Stripchat"):
@@ -814,12 +739,16 @@ def play_actor(actor, genre="Stripchat"):
     try:
         # Fetch and store HTML
         url = API_ENDPOINT_MODEL.format(actor)       
-        data = get_site_page_full(url)
+        data = sc19.get_data_from_page(url)
         data = json.loads(data)
+        
+        if not data or "user" not in data:
+            xbmcgui.Dialog().ok("Error", "Could not retrieve data for this user. Temporarily not available or may not exist anymore.")
+            return
         
         # Check for deactivated account
         if not data["cam"]:
-            xbmcgui.Dialog().ok("Info", STRINGS['deactivated'])
+            xbmcgui.Dialog().ok("Info", STRINGS['disabled'])
             return
         
         bio = ""
@@ -834,7 +763,7 @@ def play_actor(actor, genre="Stripchat"):
         # Not live (public)
         if isLive == False:
             statusts = data["user"]["user"]["statusChangedAt"]
-            xbmcgui.Dialog().ok(STRINGS['not_live'], "Status: " + USER_STATES_NICE["off"] + "\nLast broadcast: " + format_timestamp_relative(statusts))
+            xbmcgui.Dialog().ok(STRINGS['not_live'], "Status: " + USER_STATES_NICE["off"] + "\nLast broadcast: " + sc19.format_timestamp_relative(statusts))
             xbmc.executebuiltin('Dialog.Close(busydialog)')
             return
         # All other states
@@ -923,22 +852,7 @@ def play_actor(actor, genre="Stripchat"):
         xbmc.log(ADDON_SHORTNAME + ": Exception in play_actor: " + str(e), xbmc.LOGERROR)
         xbmcgui.Dialog().notification("Error", "Something went wrong: " + str(e), "", 3000, False)
         xbmc.executebuiltin('Dialog.Close(busydialog)')
-        return
-
-def get_site_page_full(page):
-    """Fetch HTML data from site"""
-
-    req = urllib.request.Request(page)
-    req.add_header('Referer', SITE_REFFERER)
-    req.add_header('Origin', SITE_ORIGIN)
-    req.add_header('User-Agent', USER_AGENT)
-    req.add_header('Accept', SITE_ACCEPT)
-    
-    response = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-    if response.getcode() != 200:
-        xbmc.log(ADDON_SHORTNAME + ": Request failed with code " + response.getcode())
-    
-    return response.read().decode('utf-8')    
+        return 
 
 def search_actor():
     """Search for actor/username and list item if username exists"""
@@ -951,7 +865,7 @@ def search_actor():
         # Prepare request
         url = API_ENDPOINT_MODEL.format(s) 
         try:
-            data = get_site_page_full(url)
+            data = sc19.get_data_from_page(url)
             data = json.loads(data)
             
         except urllib.error.HTTPError as e:
@@ -1054,7 +968,7 @@ def search_actor2(primaryTag=None):
     xbmc.log(f"Search URL: {url}", 1)
     
     try:
-        data = get_site_page_full(url)
+        data = sc19.get_data_from_page(url)
         cams = json.loads(data)
         xbmc.log("CAMS: " + str(len(cams['models'])),1)
         
@@ -1116,7 +1030,7 @@ def get_prices_string_for_plot(item):
 def get_cam_infos_as_items(cams):
     # Clean Thumbnails before opening the list
     if DEL_THUMBS_ON_STARTUP:
-        tool_thumbnails_delete2()
+        sc19.tool_thumbnails_delete_from_db()
         
     # Build kodi list items for virtual directory
     items = []
@@ -1159,9 +1073,9 @@ def get_ctx_for_cam_item(username, remove=False):
     commands = []
     # Favourites
     if remove:
-        commands.append(('[COLOR orange]' + ADDON_SHORTNAME + ' - Remove favourite [/COLOR]','RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', remove_favourite, ' + username + ')'))
+        commands.append(('[COLOR orange]' + ADDON_SHORTNAME + ' - Remove favourite [/COLOR]','RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', ctx_remove_favourite, ' + username + ')'))
     else:
-        commands.append(('[COLOR orange]' + ADDON_SHORTNAME + ' - Add as favourite [/COLOR]','RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', add_favourite, ' + username + ')'))
+        commands.append(('[COLOR orange]' + ADDON_SHORTNAME + ' - Add as favourite [/COLOR]','RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', ctx_add_favourite, ' + username + ')'))
     commands.append(('[COLOR orange]' + ADDON_SHORTNAME + ' - Refresh thumbnails [/COLOR]','RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', ctx_thumbnails_delete)'))
     # Profile info
     commands.append(('Show profile albums',"Container.Update(%s?%s)" % ( sys.argv[0],  "getalbums=" + username)))
@@ -1185,38 +1099,6 @@ def get_icon_from_status(status):
     elif status == "off":
         icon = ART_FOLDER + 'icon-off.png' 
     return icon
-
-def tool_thumbnails_delete():
-    rc = tool_thumbnails_delete2()
-    # Summary dialog
-    xbmcgui.Dialog().ok("Delete Thumbnails", "Deleted %s thumbnail files and database entries" % (str(rc)))
-    xbmc.executebuiltin('Dialog.Close(busydialog)')
-
-def tool_thumbnails_delete2():   
-    # Connect to textures db
-    conn = sqlite3.connect(DB_TEXTURES)
-    # Set cursors
-    cur = conn.cursor()
-    cur_del = conn.cursor()
-    # Delete thimbnail files
-    cur.execute(Q_THUMBNAILS)
-    rc = 0
-    rows = cur.fetchall()
-    for row in rows:
-        rc = rc + 1
-        if os.path.exists(PATH_THUMBS + str(row[1])):
-            os.remove(PATH_THUMBS + str(row[1]))
-        else:
-            #xbmc.log("The file does not exist.",1)
-            pass
-    # Delete entries from db
-    cur_del.execute(Q_DEL_THUMBNAILS)
-    conn.commit()
-    # Close connection
-    conn.close()
-    # Return number of entries found and log
-    xbmc.log(ADDON_SHORTNAME + ": Deleted %s thumbnail files and database entries" % (str(rc)),1)
-    return rc
 
 def is_port_in_use(port):
     """Check if a port is in use by attempting to connect to it."""
