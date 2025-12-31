@@ -121,71 +121,7 @@ def _get_decode_key():
             return None
     return _decode_key
 
-def _getkey_from_site(pkey: str):
-    """Fetch the decode key from the site using pkey, update addon settings, and cache globally."""
-    if not pkey:
-        _error("No pkey provided for key fetch.")
-        return
-    
-    xbmc.executebuiltin('Notification(SC19 Proxy, Fetching new decode key..., 3000)')
-    _info("Starting fetch for new decode key using pkey.")
-    
-    try:
-        # Fetch config JSON
-        config_url = API_CONFIG_URL
-        req = urllib.request.Request(config_url, headers=FORWARD_HEADERS)
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-            config_data = json.load(resp)
-        
-        static_data = config_data.get('static', {})
-        origin = static_data.get('features', {}).get('MMPExternalSourceOrigin')
-        version = static_data.get('featuresV2', {}).get('playerModuleExternalLoading', {}).get('mmpVersion')
-        
-        if not origin or not version:
-            _error("Failed to extract URLs from config API.")
-            xbmc.executebuiltin('Notification(SC19 Proxy, Key fetch failed: Invalid config, 5000)')
-            return
-        
-        # Fetch main.js
-        main_js_url = f"{origin}/v{version}/main.js"
-        req = urllib.request.Request(main_js_url, headers=FORWARD_HEADERS)
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-            main_js_text = resp.read().decode('utf-8')
-        
-        # Extract Doppio JS name
-        match = re.search(r'require\("./(Doppio[^"]*\.js)"\)', main_js_text)
-        if not match:
-            _error("Doppio JS name not found in main.js")
-            xbmc.executebuiltin('Notification(SC19 Proxy, Key fetch failed: Doppio JS not found, 5000)')
-            return
-        doppio_name = match.group(1)
-        
-        # Fetch Doppio JS
-        doppio_url = f"{origin}/v{version}/{doppio_name}"
-        req = urllib.request.Request(doppio_url, headers=FORWARD_HEADERS)
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-            doppio_js_text = resp.read().decode('utf-8')
-        
-        # Extract decode key
-        match = re.search(rf'{re.escape(pkey)}:([^"]+)', doppio_js_text)
-        if not match:
-            _error(f"pkey {pkey} not found in Doppio JS")
-            xbmc.executebuiltin('Notification(SC19 Proxy, Key fetch failed: pkey not found, 5000)')
-            return
-        new_key = match.group(1)
-        
-        # Update addon setting and global cache
-        global _decode_key
-        addon = xbmcaddon.Addon()
-        addon.setSetting('decode_key', new_key)
-        _decode_key = new_key
-        
-        _info(f"Successfully fetched and updated decode key: {new_key[:10]}...")
-        xbmc.executebuiltin('Notification(SC19 Proxy, Decode key updated successfully, 3000)')
-    
-    except Exception as e:
-        _error(f"Failed to fetch or process data for key fetch: {e}")
-        xbmc.executebuiltin('Notification(SC19 Proxy, Key fetch failed: Check logs, 5000)')
+
 
 def _pad_b64(s: str) -> str:
     if not s:
@@ -214,74 +150,50 @@ def _is_valid_decrypted_url(url: str) -> bool:
     return bool(re.match(pattern, url))
 
 def _decode_m3u8_mouflon_files(m3u8_text: str) -> str:
-    """Find '#EXT-X-MOUFLON:FILE:<b64>' lines and replace the next media reference 'media.mp4' with decoded filename.
-    If key is missing or decryption fails, fetch a new key and retry."""
+    """Find '#EXT-X-MOUFLON:URI:<url>' (v2) lines and decode by reversing and decrypting the segment."""
     if "#EXT-X-MOUFLON" not in m3u8_text:
         return m3u8_text
     
     lines = m3u8_text.splitlines()
     key = _get_decode_key()
     if key is None:
-        _info("Decode key missing. Fetching new key.")
-        psch, pkey = _extract_psch_and_pkey(m3u8_text)
-        _getkey_from_site(pkey)
-        key = _get_decode_key()  # Retry after fetch
-        if key is None:
-            _error("Still no decode key after fetch. Returning original m3u8.")
-            return m3u8_text
+        _error("Decode key (pdkey) missing in addon settings. Encrypted streams will not play.")
+        return m3u8_text  # Return original without decoding
     
-    # First pass: Attempt decryption
+    # Attempt decryption with v2 algorithm
     invalid_decryptions = 0
     for idx, line in enumerate(lines):
-        if line.startswith("#EXT-X-MOUFLON:FILE:"):
-            enc = line.split(":", 2)[-1].strip()
-            dec = _mouflon_decrypt_b64(enc, key)
-            for j in range(idx + 1, min(len(lines), idx + 6)):
-                candidate = lines[j]
-                if candidate.strip() == "":
-                    continue
-                if "media.mp4" in candidate:
-                    new_candidate = candidate.replace("media.mp4", dec)
-                    if not _is_valid_decrypted_url(new_candidate):
-                        invalid_decryptions += 1
-                        continue
-                    if new_candidate != candidate:
-                        lines[j] = new_candidate
-                    break
-    
-    # If any decryptions failed, fetch new key and retry
-    if invalid_decryptions > 0:
-        _info(f"Decryption failed for {invalid_decryptions} segments. Fetching new key and retrying.")
-        psch, pkey = _extract_psch_and_pkey(m3u8_text)
-        _getkey_from_site(pkey)
-        new_key = _get_decode_key()
-        if new_key and new_key != key:
-            # Retry with new key
-            lines = m3u8_text.splitlines()  # Reset lines
-            invalid_decryptions = 0
-            for idx, line in enumerate(lines):
-                if line.startswith("#EXT-X-MOUFLON:FILE:"):
-                    enc = line.split(":", 2)[-1].strip()
-                    dec = _mouflon_decrypt_b64(enc, new_key)
+        # Handle v2: #EXT-X-MOUFLON:URI:<full_url_with_encrypted_segment>
+        if line.startswith("#EXT-X-MOUFLON:URI:"):
+            uri = line.split(":", 2)[-1].strip()
+            # Extract encrypted segment from URI pattern: .../{segnum}_{encrypted}_{timestamp}_...
+            match = re.search(r'_(\d+)_([^_]+)_(\d+)', uri)
+            if match:
+                encrypted_segment = match.group(2)
+                # Reverse the segment, then apply decryption (v2 algorithm)
+                reversed_segment = encrypted_segment[::-1]
+                dec = _mouflon_decrypt_b64(reversed_segment, key)
+                if dec:
+                    # Replace encrypted segment in URI with decrypted value
+                    new_uri = uri.replace(f'_{encrypted_segment}_', f'_{dec}_')
+                    lines[idx] = f"#EXT-X-MOUFLON:URI:{new_uri}"
+                    # Find next non-empty line and replace 'media.mp4' if present
                     for j in range(idx + 1, min(len(lines), idx + 6)):
                         candidate = lines[j]
                         if candidate.strip() == "":
                             continue
                         if "media.mp4" in candidate:
-                            new_candidate = candidate.replace("media.mp4", dec)
-                            if not _is_valid_decrypted_url(new_candidate):
-                                invalid_decryptions += 1
-                                continue
-                            if new_candidate != candidate:
-                                lines[j] = new_candidate
+                            lines[j] = new_uri
                             break
-            if invalid_decryptions == 0:
-                _info("Re-decryption successful with new key.")
-            else:
-                _error(f"Re-decryption still failed for {invalid_decryptions} segments. Returning original m3u8.")
-                return m3u8_text
-        else:
-            _error("No new key available after fetch. Returning original m3u8.")
+                else:
+                    invalid_decryptions += 1
+    
+    if invalid_decryptions > 0:
+        _error(f"Decryption failed for {invalid_decryptions} segments. Check decode key in addon settings.")
+        # If all decryptions fail, return original to avoid broken stream
+        mouflon_count = len([l for l in lines if l.startswith("#EXT-X-MOUFLON:")])
+        if mouflon_count > 0 and invalid_decryptions == mouflon_count:
+            _error("All decryptions invalid. Returning original m3u8.")
             return m3u8_text
     
     return "\n".join(lines)
@@ -299,18 +211,23 @@ def _extract_psch_and_pkey(m3u8_text):
     if not psch_lines:
         return '', ''
 
-    # Prefer the last 'v1' PSCH line if present
-    v1_lines = []
+    # Prefer the last 'v2' PSCH line if present
+    v2_lines = []
     for l in psch_lines:
         parts_tmp = l.split(':', 3)
-        if len(parts_tmp) > 2 and parts_tmp[2].lower().startswith('v1'):
-            v1_lines.append(l)
+        if len(parts_tmp) > 2 and parts_tmp[2].lower().startswith('v2'):
+            v2_lines.append(l)
 
-    selected_line = v1_lines[-1] if v1_lines else psch_lines[-1]
+    # Use the last v2 line if available, otherwise the last PSCH line
+    if v2_lines:
+        selected_line = v2_lines[-1]
+    else:
+        selected_line = psch_lines[-1]
     parts = selected_line.split(':', 3)
     version = parts[2].lower() if len(parts) > 2 else ''
     pkey = parts[3] if len(parts) > 3 else ''
     return version, pkey
+
 
 def _make_absolute(base, ref):
     return urllib.parse.urljoin(base, ref)
@@ -623,11 +540,11 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                     host, port = self.server.server_address  # type: ignore
 
                     def _inject_and_proxy(abs_url: str) -> str:
-                        # Force psch=v1 regardless of what's in the master playlist
+                        # Always use v2 (reverse + decrypt algorithm)
                         pr = urllib.parse.urlsplit(abs_url)
                         q = urllib.parse.parse_qs(pr.query, keep_blank_values=True)
-                        # Always set psch to v1
-                        q['psch'] = ['v1']
+                        # Always set psch to v2
+                        q['psch'] = ['v2']
                         if pkey and 'pkey' not in q:
                             q['pkey'] = [pkey]
                         new_q = urllib.parse.urlencode({k: v[0] for k, v in q.items()})
