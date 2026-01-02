@@ -96,6 +96,9 @@ _init_cache = {}
 # Global flag to halt requests after key fault detection
 _key_fault_detected = False
 
+# Global flag to track if pkey mismatch warning has been shown
+_pkey_mismatch_warned = False
+
 # Global variable for the stream M3U8 URL (default if username provided at startup)
 _stream_m3u8_url = None
 
@@ -258,6 +261,7 @@ def _extract_psch_and_pkey(m3u8_text):
             v2_lines.append(l)
 
     # If we have a loaded pkey, try to find matching v2 line
+    global _pkey_mismatch_warned
     if loaded_pkey and v2_lines:
         for l in v2_lines:
             parts = l.split(':', 3)
@@ -265,18 +269,22 @@ def _extract_psch_and_pkey(m3u8_text):
                 version = parts[2].lower() if len(parts) > 2 else ''
                 pkey = parts[3] if len(parts) > 3 else ''
                 _debug(f"Found matching pkey in playlist: {pkey}")
+                # Reset warning flag on successful match
+                _pkey_mismatch_warned = False
                 return version, pkey
-        # Loaded pkey doesn't match any v2 line
-        _error(f"Loaded pkey '{loaded_pkey}' not found in playlist. Using last v2 line.")
-        try:
-            xbmcgui.Dialog().notification(
-                'SC19 Proxy Warning',
-                'Configured pkey not found in playlist',
-                xbmcgui.NOTIFICATION_WARNING,
-                4000
-            )
-        except Exception:
-            pass
+        # Loaded pkey doesn't match any v2 line - show warning only once
+        if not _pkey_mismatch_warned:
+            _error(f"Loaded pkey '{loaded_pkey}' not found in playlist. Using last v2 line.")
+            try:
+                xbmcgui.Dialog().notification(
+                    'SC19 Proxy Warning',
+                    'Configured pkey not found in playlist',
+                    xbmcgui.NOTIFICATION_WARNING,
+                    4000
+                )
+            except Exception:
+                pass
+            _pkey_mismatch_warned = True
     
     # Fallback: use last v2 line if available, otherwise last PSCH line
     if v2_lines:
