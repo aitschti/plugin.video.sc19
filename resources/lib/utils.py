@@ -205,7 +205,7 @@ def tool_import_keys():
         
         # Parse format: pkey:pdkey
         if ':' not in content:
-            xbmcgui.Dialog().ok("Import Keys", "Error: Invalid format. Expected format: pkey:pdkey\nExample: Zeechoej4aleeshi:ubahjae7goPoodi6")
+            xbmcgui.Dialog().ok("Import Keys", "Error: Invalid format. Expected format: pkey:pdkey\nExample: Zeec...:ubah...")
             return
         
         parts = content.split(':', 1)
@@ -218,6 +218,15 @@ def tool_import_keys():
         
         if not pkey or not pdkey:
             xbmcgui.Dialog().ok("Import Keys", "Error: pkey or pdkey is empty in the file.")
+            return
+        
+        # Validate key lengths (both must be exactly 16 characters)
+        if len(pkey) != 16:
+            xbmcgui.Dialog().ok("Import Keys", f"Error: pkey must be exactly 16 characters long.\nCurrent length: {len(pkey)}")
+            return
+        
+        if len(pdkey) != 16:
+            xbmcgui.Dialog().ok("Import Keys", f"Error: pdkey must be exactly 16 characters long.\nCurrent length: {len(pdkey)}")
             return
         
         # Set both values in addon settings
