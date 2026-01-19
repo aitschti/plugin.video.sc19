@@ -183,10 +183,23 @@ def _mouflon_decrypt_b64(encrypted_b64: str, key: str) -> str:
     except Exception:
         return out.decode("latin-1", errors="ignore")
 
-def _is_valid_decrypted_url(url: str) -> bool:
-    """Validate if the decrypted URL looks correct (e.g., ends with .mp4 and has part number)."""
-    pattern = r'^https://.*\.mp4$'
-    return bool(re.match(pattern, url))
+def clean_m3u8_text(playlist: str) -> str:
+    """Remove lines that start with any prefix in `remove_prefixes`.
+    Preserves other lines and their original newline characters.
+    """
+    # List of prefixes to remove
+    # Comparison is case-insensitive.
+    remove_prefixes = ["#EXT-X-MOUFLON"]
+
+    # Keep original line endings using splitlines(keepends=True)
+    lines = playlist.splitlines(keepends=True)
+    cleaned_lines = []
+    for ln in lines:
+        stripped = ln.lstrip()
+        if any(stripped.lower().startswith(p.lower()) for p in remove_prefixes):
+            continue
+        cleaned_lines.append(ln)
+    return "".join(cleaned_lines)
 
 def _decode_m3u8_mouflon_files(m3u8_text: str) -> str:
     """Find '#EXT-X-MOUFLON:URI:<url>' (v2) lines and decode by reversing and decrypting the segment."""
@@ -553,7 +566,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 _key_fault_detected = True  # Set flag to halt further segment requests
                 # For playlists, return custom m3u8 to minimize error dialog
                 if is_playlist:
-                    custom_playlist = "#EXTM3U\n#EXT-X-VERSION:3\n# Decode key error: Check key.txt for the correct key.\n"
+                    custom_playlist = "#EXTM3U\n#EXT-X-VERSION:3\n# Decode key error: Check for the correct key.\n"
                     body = custom_playlist.encode('utf-8')
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/vnd.apple.mpegurl')
@@ -569,7 +582,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 self.send_header('Connection', 'close')
                 self.end_headers()
                 try:
-                    self.wfile.write(b'Decode key error: Invalid segment URL. Check key.txt for the correct key.')
+                    self.wfile.write(b'Decode key error: Invalid segment URL. Check for the correct key.')
                 except Exception:
                     pass
                 return
@@ -611,7 +624,6 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                         # Always use v2 (reverse + decrypt algorithm)
                         pr = urllib.parse.urlsplit(abs_url)
                         q = urllib.parse.parse_qs(pr.query, keep_blank_values=True)
-                        # Always set psch to v2
                         q['psch'] = ['v2']
                         if pkey and 'pkey' not in q:
                             q['pkey'] = [pkey]
@@ -652,7 +664,11 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
                         out.append(line)
 
-                    body = ("\n".join(out) + "\n").encode('utf-8')
+                    # Join rewritten playlist and run cleanup after decryption/rewrites
+                    out_text = "\n".join(out) + "\n"
+                    out_text = clean_m3u8_text(out_text)
+                    
+                    body = out_text.encode('utf-8')
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/vnd.apple.mpegurl')
                     self.send_header('Content-Length', str(len(body)))
