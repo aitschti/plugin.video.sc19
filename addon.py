@@ -20,7 +20,7 @@ ADDON_SHORTNAME = "SC19"
 ADDON = xbmcaddon.Addon(id=ADDON_NAME)
 
 # Module specific constants
-SNAPSHOT_IMAGE = "https://img.strpst.com/{0}/thumbs/{1}/{2}_webp"
+SNAPSHOT_IMAGE = "https://img.doppiocdn.net/{0}/thumbs/{1}/{2}_webp"
 
 # Global proxy instance
 _proxy_instance = None
@@ -289,7 +289,7 @@ def get_favourites():
         
         for username, user_id in res:
             if user_id:
-                snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(timestamp, user_id)
+                snap = "https://cdn.net/thumbs/{0}/{1}_webp".format(timestamp, user_id)
                 urls_to_check.append((username, snap))
         
         if urls_to_check:
@@ -337,7 +337,7 @@ def get_favourites():
                         else:
                             li.setArt({'icon': data["user"]["user"]["avatarUrl"], 'fanart': data["user"]["user"]['previewUrl']})
                     else:
-                        snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(data["user"]["user"]['snapshotTimestamp'],data["user"]["user"]['id'])
+                        snap = "https://img.doppiocdn.net/thumbs/{0}/{1}_webp".format(data["user"]["user"]['snapshotTimestamp'],data["user"]["user"]['id'])
                         li.setArt({'icon': snap, 'thumb': snap, 'fanart': data["user"]["user"]['previewUrl']})
 
                     # Tag info
@@ -358,7 +358,7 @@ def get_favourites():
                 timestamp = int(time())
                 
                 if user_id:
-                    snap = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(timestamp, user_id)
+                    snap = "https://img.doppiocdn.net/thumbs/{0}/{1}_webp".format(timestamp, user_id)
                     # Use pre-checked result
                     if image_availability.get(username, False):
                         li.setArt({'icon': snap, 'thumb': snap, 'fanart': 'DefaultVideo.png'})
@@ -1042,7 +1042,7 @@ def get_cam_infos_as_items(cams):
         if not item['status'] == "offfff":
             username = item['username']
             
-            icon = "https://img.strpst.com/thumbs/{0}/{1}_webp".format(item['snapshotTimestamp'],item['id'])
+            icon = "https://img.doppiocdn.net/thumbs/{0}/{1}_webp".format(item['snapshotTimestamp'],item['id'])
             url = sys.argv[0] + '?playactor=' + username
             li = xbmcgui.ListItem(username)
             vit = li.getVideoInfoTag()

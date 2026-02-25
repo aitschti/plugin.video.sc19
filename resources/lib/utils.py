@@ -23,8 +23,8 @@ DB_TEXTURES = xbmcvfs.translatePath("special://userdata/Database/Textures13.db")
 PATH_THUMBS = xbmcvfs.translatePath("special://userdata/Thumbnails/")
 
 # Queries
-Q_THUMBNAILS = "SELECT url,cachedurl FROM texture WHERE url LIKE '%.strpst.com%'"
-Q_DEL_THUMBNAILS = "DELETE FROM texture WHERE url LIKE '%.strpst.com%'"
+Q_THUMBNAILS = "SELECT url,cachedurl FROM texture WHERE url LIKE '%.doppiocdn.net%'"
+Q_DEL_THUMBNAILS = "DELETE FROM texture WHERE url LIKE '%.doppiocdn.net%'"
 Q_DEL_FAVOURITE = "DELETE FROM favourites WHERE user = ?"
 Q_ADD_FAVOURITE = "INSERT INTO favourites (user, user_id) VALUES(?, ?)"
 Q_GET_FAVOURITES = "SELECT * FROM favourites;"
