@@ -28,7 +28,7 @@ Tested on Android (Fire TV), Windows and MacOS, should work fine with other Linu
 - Install the addon from the ZIP file in Kodi.
 - **Proxy Setup (using internal proxy)**: The addon uses a proxy for streaming. Ensure the proxy port (default 8099) is available and not in use by other applications. You can configure the port in the addon settings.
 - **Favourites**: Set a path for a backup location of the favourites database for easy backup and restore and sharing with other clients in your network.
-- **Keys (pkey & pdkey)**: Both keys are required for decrypting stream URLs. Set them manually in settings (Proxy section) or import from a text file (format: `pkey:pdkey`). Access via Settings > Proxy > Import keys from file, or Tools menu. **Do not ask for keys here!** Check closed issue #19 for more info on how to obtain them yourself.
+- **Keys (pkey & pdkey)**: Both keys are required for decrypting stream URLs. Set them manually in settings (Proxy section) or import from a text file (format: `pkey:pdkey`). Access via Settings > Proxy > Import keys from file, or Tools menu. **Do not ask for keys here!** Check "documentation" issue for more info on how to obtain them yourself.
 
 ## Recommended settings / tips
 
