@@ -47,12 +47,13 @@ def _error(msg: str):
 FORWARD_HEADERS = {
     'Referer': 'https://stripchat.com/',
     'Origin': 'https://stripchat.com',
-    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.182 Safari/537.36",
+    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.138 Safari/537.36",
     'Accept': '*/*'
 }
 
 # API Endpoints
-API_ENDPOINT_MODEL = "https://stripchat.com/api/front/v2/models/username/{}/cam"
+API_ENDPOINT_MODEL_WITH_ID = "https://stripchat.com/api/front/v2/models/{}/cam"
+API_ENDPOINT_USERID = "https://stripchat.com/api/front/users/user-ids/{}"
 API_CONFIG_URL = "https://stripchat.com/api/front/v3/config/static"
 
 # M3U8 URL Template and CDN
@@ -795,6 +796,25 @@ def get_proxy(port=None):
         _error(f"Failed to start proxy: {e}")
         raise
 
+def _resolve_user_id(username):
+    """Resolve a username to its model id. Returns None on failure."""
+    headers = {
+        "Referer": f"https://www.stripchat.com/{username}",
+        "User-Agent": FORWARD_HEADERS["User-Agent"]
+    }
+    try:
+        req = urllib.request.Request(API_ENDPOINT_USERID.format(username), headers=headers)
+        with urllib.request.urlopen(req) as res:
+            data = json.load(res)
+        user_id = data.get("id") if isinstance(data, dict) else None
+        if not user_id:
+            _error(f"No model id for {username}: {data.get('description') if isinstance(data, dict) else data}")
+            return None
+        return str(user_id)
+    except Exception as e:
+        _error(f"Failed to resolve model id for {username}: {e}")
+        return None
+
 def fetch_stream_url(username):
     """Fetch the M3U8 URL for the given username."""
     # Check cache first
@@ -806,7 +826,12 @@ def fetch_stream_url(username):
         else:
             del _username_m3u8_cache[username]  # Expired, remove
     
-    api_url = API_ENDPOINT_MODEL.format(username)
+    # The username based cam endpoint is gone, resolve the model id first
+    user_id = _resolve_user_id(username)
+    if not user_id:
+        return None
+
+    api_url = API_ENDPOINT_MODEL_WITH_ID.format(user_id)
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "X-Requested-With": "XMLHttpRequest",
