@@ -37,6 +37,7 @@ Q_SCHEMA_INFO = "PRAGMA table_info(favourites);"
 
 # API endpoints
 API_ENDPOINT_BROADCASTS = "https://stripchat.com/api/front/v1/broadcasts/{0}"
+API_ENDPOINT_USERID = "https://stripchat.com/api/front/users/user-ids/{0}"
 
 # Threading
 MAX_WORKERS = ADDON.getSettingInt('max_workers')
@@ -48,7 +49,7 @@ SITE_ORIGIN = "https://stripchat.com"
 SITE_ACCEPT = "text/html"
 
 # User agent(s)
-USER_AGENT = " Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.182 Safari/537.36"
+USER_AGENT = " Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.138 Safari/537.36"
 
 def connect_favourites_db():
     "Connect to favourites database and create one, if it does not exist."
@@ -324,20 +325,25 @@ def format_timestamp_relative(timestamp):
         xbmc.log(f"{ADDON_SHORTNAME}: Error in format_timestamp_relative: {str(e)}", xbmc.LOGERROR)
         return str(timestamp)
 
-def get_model_id_for_user(username):
-    """Return (modelId (string) or None, error_message or None) for a given username.
+def _extract_model_id(url, username):
+    """Fetch url and return (modelId (string) or None, error_message or None, user_not_found).
        When the API returns JSON with only 'title' and 'description' (e.g. when account is deleted),
-       the 'description' value is returned as error_message.
+       the 'description' value is returned as error_message and user_not_found is True.
+       user_not_found stays False for anything else (broken endpoint, network error), so the
+       caller knows it is worth asking another endpoint.
     """
     try:
-        payload = get_data_from_page(API_ENDPOINT_BROADCASTS.format(username))
+        payload = get_data_from_page(url.format(username))
         data = json.loads(payload)
         model_id = None
         error_msg = None
+        not_found = False
 
         if isinstance(data, dict):
             # Common places to find the id
-            if 'modelId' in data:
+            if 'id' in data:
+                model_id = data['id']
+            elif 'modelId' in data:
                 model_id = data['modelId']
             elif isinstance(data.get('item'), dict) and 'modelId' in data['item']:
                 model_id = data['item']['modelId']
@@ -349,14 +355,34 @@ def get_model_id_for_user(username):
                 keys = set(data.keys())
                 if keys == {'title', 'description'}:
                     error_msg = data.get('description', None)
+                    not_found = True
 
         if model_id:
-            return str(model_id), None
-        return None, error_msg
+            return str(model_id), None, False
+        return None, error_msg, not_found
 
     except Exception as e:
-        xbmc.log(f"{ADDON_SHORTNAME}: Error getting modelId for {username}: {str(e)}", xbmc.LOGERROR)
-        return None, str(e)
+        xbmc.log(f"{ADDON_SHORTNAME}: Error getting modelId for {username} from {url}: {str(e)}", xbmc.LOGERROR)
+        return None, str(e), False
+
+def get_model_id_for_user(username):
+    """Return (modelId (string) or None, error_message or None) for a given username.
+       The site no longer serves the username based endpoints, so the id is needed
+       for every model request.
+    """
+    model_id, error_msg, not_found = _extract_model_id(API_ENDPOINT_USERID, username)
+    if model_id:
+        return model_id, None
+
+    # The API did not state that the user is gone, so the endpoint itself may be
+    # at fault. Give the (older) broadcasts endpoint a try before giving up.
+    if not not_found:
+        fallback_id, fallback_err, _ = _extract_model_id(API_ENDPOINT_BROADCASTS, username)
+        if fallback_id:
+            return fallback_id, None
+        error_msg = error_msg or fallback_err
+
+    return None, error_msg
 
 def update_favourites_user_ids(force=False, show_dialog=True):
     """Update the favourites database:
@@ -574,24 +600,30 @@ def check_images_parallel(url_list, max_workers=10):
     
     return results
 
-def fetch_user_data_parallel(usernames, API_ENDPOINT_MODEL, max_workers=10):
+def fetch_user_data_parallel(usernames, API_ENDPOINT_MODEL_WITH_ID, max_workers=10):
     """
     Fetch user data for multiple usernames in parallel
-    
+
     Args:
         usernames: List of usernames to fetch data for
+        API_ENDPOINT_MODEL_WITH_ID: URL template taking the model id
         max_workers: Maximum number of concurrent threads
-        
+
     Returns:
         Dictionary mapping username to user data (or None if failed)
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    
+
     results = {}
-    
+
     def fetch_single_user(username):
         try:
-            data = get_data_from_page(API_ENDPOINT_MODEL.format(username))
+            # The model id has to be resolved first, the username endpoint is gone
+            model_id, model_err = get_model_id_for_user(username)
+            if not model_id:
+                xbmc.log(f"{ADDON_SHORTNAME}: Could not resolve model id for {username}: {model_err or 'no modelId'}", xbmc.LOGWARNING)
+                return username, None
+            data = get_data_from_page(API_ENDPOINT_MODEL_WITH_ID.format(model_id))
             return username, json.loads(data)
         except Exception as e:
             xbmc.log(f"{ADDON_SHORTNAME}: Error fetching data for {username}: {str(e)}", xbmc.LOGWARNING)
