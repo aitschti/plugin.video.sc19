@@ -34,11 +34,11 @@ ART_FOLDER = ADDON.getAddonInfo('path') + '/resources/media/'
 # API endpoints
 API_ENDPOINT_MODELS = "https://stripchat.com/api/front/models"
 API_ENDPOINT_MODELS_FILTER = "https://stripchat.com/api/front/models?&limit={0}&offset={1}&primaryTag={2}&filterGroupTags=[[\"{3}\"]]&sortBy={4}"
-API_ENDPOINT_MODEL  = "https://stripchat.com/api/front/v2/models/username/{0}/cam"
-API_ENDPOINT_MEMBERS = "https://stripchat.com/api/front/models/username/{0}/members"
-API_ENDPOINT_ALBUMS = "https://stripchat.com/api/front/v2/users/username/{0}/albums"
-API_ENDPOINT_ALBUM = "https://stripchat.com/api/front/users/username/{0}/albums/{1}/photos"
-API_ENDPOINT_VIDEOS = "https://stripchat.com/api/front/v2/users/username/{0}/videos"
+API_ENDPOINT_MODEL_WITH_ID  = "https://stripchat.com/api/front/v2/models/{0}/cam"
+API_ENDPOINT_MEMBERS_WITH_ID = "https://stripchat.com/api/front/models/{0}/members"
+API_ENDPOINT_ALBUMS_WITH_ID = "https://stripchat.com/api/front/v2/users/{0}/albums"
+API_ENDPOINT_ALBUM_WITH_ID = "https://stripchat.com/api/front/users/{0}/albums/{1}/photos"
+API_ENDPOINT_VIDEOS_WITH_ID = "https://stripchat.com/api/front/v2/users/{0}/videos"
 API_ENDPOINT_SEARCH = "https://stripchat.com/api/front/v4/models/search/group/username?query={0}&primaryTag={1}&limit=99"
 
 # Site specific constants
@@ -230,7 +230,11 @@ def get_menu(param):
     xbmcplugin.endOfDirectory(PLUGIN_ID)
 
 def get_profile_data(item):
-    data = sc19.get_data_from_page(API_ENDPOINT_MODEL.format(item))
+    model_id, model_err = sc19.get_model_id_for_user(item)
+    if not model_id:
+        xbmcgui.Dialog().ok("Error", model_err or "Could not resolve user id for " + item)
+        return
+    data = sc19.get_data_from_page(API_ENDPOINT_MODEL_WITH_ID.format(model_id))
     data = json.loads(data)
     xbmc.log("AVATAR URL: " + data["user"]["user"]["avatarUrl"], 1)
     return data["user"]["user"]["avatarUrl"]
@@ -281,7 +285,7 @@ def get_favourites():
         # Fetch all user data in parallel
         prg.update(0, "Fetching user data...")
         usernames = [username for username, user_id in res]
-        user_data_dict = sc19.fetch_user_data_parallel(usernames, API_ENDPOINT_MODEL, MAX_WORKERS)
+        user_data_dict = sc19.fetch_user_data_parallel(usernames, API_ENDPOINT_MODEL_WITH_ID, MAX_WORKERS)
     else:
         # Check snapshot availability in parallel (existing behavior)
         timestamp = int(time())
@@ -481,10 +485,14 @@ def put_virtual_directoy_listing(items):
     xbmcplugin.addDirectoryItems(PLUGIN_ID, items)
     xbmcplugin.endOfDirectory(PLUGIN_ID)
 
-def get_viewers_count(actor):
-    url = API_ENDPOINT_MEMBERS.format(actor)
-    
+def get_viewers_count(actor, model_id=None):
     try:
+        # Callers that already resolved the id pass it in to save a request
+        if not model_id:
+            model_id = sc19.get_model_id_for_user(actor)[0]
+            if not model_id:
+                return 0
+        url = API_ENDPOINT_MEMBERS_WITH_ID.format(model_id)
         data = sc19.get_data_from_page(url)
         data = json.loads(data)
         viewers = data["guests"] + data["spies"] + data["invisibles"] + data["greens"] + data["golds"] + data["regulars"]
@@ -499,7 +507,11 @@ def get_albums(actor):
     show_all = ADDON.getSettingBool('ctx_show_all_albums')
     
     try:
-        data = sc19.get_data_from_page(API_ENDPOINT_ALBUMS.format(actor))
+        model_id, model_err = sc19.get_model_id_for_user(actor)
+        if not model_id:
+            xbmcgui.Dialog().ok("Profile albums", model_err or "Could not resolve user id for " + actor)
+            return
+        data = sc19.get_data_from_page(API_ENDPOINT_ALBUMS_WITH_ID.format(model_id))
         data = json.loads(data)
         data = data['albums']
         #xbmc.log(str(data), 1)
@@ -566,9 +578,13 @@ def get_albums(actor):
             
 def get_album(actor, id):
     try:
-        data = sc19.get_data_from_page(API_ENDPOINT_ALBUM.format(actor,id))
+        model_id, model_err = sc19.get_model_id_for_user(actor)
+        if not model_id:
+            xbmcgui.Dialog().ok("Error", model_err or "Could not resolve user id for " + actor)
+            return
+        data = sc19.get_data_from_page(API_ENDPOINT_ALBUM_WITH_ID.format(model_id,id))
         data = json.loads(data)
-        
+
         data = data['photos']
         
         if len(data) == 0:
@@ -603,7 +619,11 @@ def get_videos(actor):
     show_all = ADDON.getSettingBool('ctx_show_all_videos')
     
     try:
-        data = sc19.get_data_from_page(API_ENDPOINT_VIDEOS.format(actor))
+        model_id, model_err = sc19.get_model_id_for_user(actor)
+        if not model_id:
+            xbmcgui.Dialog().ok("Profile videos", model_err or "Could not resolve user id for " + actor)
+            return
+        data = sc19.get_data_from_page(API_ENDPOINT_VIDEOS_WITH_ID.format(model_id))
         data = json.loads(data)
         data = data['videos']
         
@@ -681,9 +701,13 @@ def play_url(url, title):
     # Set inputstream addon based on setting
     if stream_player == "0":
         xbmc.log(ADDON_SHORTNAME + ": " + "Using default stream player", 1)
-    if stream_player == "1":
+    elif stream_player == "1":
         li.setProperty('inputstream', 'inputstream.ffmpegdirect')
         xbmc.log(ADDON_SHORTNAME + ": " + "Using InputStream FFmpegDirect", 1)
+    elif stream_player == "2":
+        li.setProperty('inputstream', 'inputstream.adaptive')
+        li.setProperty('inputstream.adaptive.manifest_type', 'hls')
+        xbmc.log(ADDON_SHORTNAME + ": " + "Using InputStream Adaptive", 1)
 
     xbmc.Player().play(url,li)
     
@@ -693,11 +717,15 @@ def show_picture(url):
 def slideshow2(actor, id):
     #xbmcgui.Dialog().ok("Slideshow", "Actor: " + actor + " Id: " + str(id))
     try:
-        data = sc19.get_data_from_page(API_ENDPOINT_ALBUM.format(actor,id))
+        model_id, model_err = sc19.get_model_id_for_user(actor)
+        if not model_id:
+            xbmcgui.Dialog().ok("Error", model_err or "Could not resolve user id for " + actor)
+            return
+        data = sc19.get_data_from_page(API_ENDPOINT_ALBUM_WITH_ID.format(model_id,id))
         data = json.loads(data)
-        
+
         data = data['photos']
-        
+
         if len(data) == 0:
             xbmcgui.Dialog().ok("No photos", "Album contains no photos to display.")
         else:
@@ -739,11 +767,18 @@ def play_actor(actor, genre="Stripchat"):
     
     # Try to play actor
     try:
+        # Resolve model id first, the username endpoint is no longer served
+        model_id, model_err = sc19.get_model_id_for_user(actor)
+        if not model_id:
+            xbmcgui.Dialog().ok("Error", model_err or "Could not retrieve data for this user. Temporarily not available or may not exist anymore.")
+            xbmc.executebuiltin('Dialog.Close(busydialog)')
+            return
+
         # Fetch and store HTML
-        url = API_ENDPOINT_MODEL.format(actor)       
+        url = API_ENDPOINT_MODEL_WITH_ID.format(model_id)
         data = sc19.get_data_from_page(url)
         data = json.loads(data)
-        
+
         if not data or "user" not in data:
             xbmcgui.Dialog().ok("Error", "Could not retrieve data for this user. Temporarily not available or may not exist anymore.")
             return
@@ -817,7 +852,7 @@ def play_actor(actor, genre="Stripchat"):
 
         name_to_use = data["user"]["user"]["name"] if data["user"]["user"]["name"] else data["user"]["user"]["username"]
         bio += "Name: " + name_to_use + "\n"
-        viewers = get_viewers_count(actor)
+        viewers = get_viewers_count(actor, model_id)
         bio += "Viewers: " + str(viewers) + "\n"
         bio += get_prices_string_for_plot(data["user"]["user"]) + "\n"
         if not data["user"]["user"]["description"] == "":
@@ -837,12 +872,17 @@ def play_actor(actor, genre="Stripchat"):
         # Set inputstream addon based on setting
         if stream_player == "0":
             xbmc.log(ADDON_SHORTNAME + ": " + "Using default stream player", 1)
-        if stream_player == "1":
+        elif stream_player == "1":
             li.setProperty('inputstream', 'inputstream.ffmpegdirect')
-            li.setProperty('inputstream.ffmpegdirect.is_realtime_stream', 'true')  # Indicate live stream
+            li.setProperty('inputstream.ffmpegdirect.is_realtime_stream', 'true')
             if ADDON.getSettingBool('use_ffmpeg_timeshift'):
-                li.setProperty('inputstream.ffmpegdirect.stream_mode', 'timeshift')  # Enable timeshift
+                li.setProperty('inputstream.ffmpegdirect.stream_mode', 'timeshift')
             xbmc.log(ADDON_SHORTNAME + ": " + "Using InputStream FFmpegDirect", 1)
+        elif stream_player == "2":
+            li.setProperty('inputstream', 'inputstream.adaptive')
+            li.setProperty('inputstream.adaptive.manifest_type', 'hls')
+            li.setContentLookup(False)
+            xbmc.log(ADDON_SHORTNAME + ": " + "Using InputStream Adaptive", 1)
 
         # Play stream
         xbmc.Player().play(pl, li)
@@ -864,12 +904,18 @@ def search_actor():
         xbmcplugin.endOfDirectory(int(sys.argv[1]), succeeded=False)
     else:
         data = {}
+        # Resolve model id first, a failed lookup means the username does not exist
+        model_id, model_err = sc19.get_model_id_for_user(s)
+        if not model_id:
+            xbmcgui.Dialog().ok("Nothing found", model_err or "Username does not exist. Please try again.")
+            return
+
         # Prepare request
-        url = API_ENDPOINT_MODEL.format(s) 
+        url = API_ENDPOINT_MODEL_WITH_ID.format(model_id)
         try:
             data = sc19.get_data_from_page(url)
             data = json.loads(data)
-            
+
         except urllib.error.HTTPError as e:
             xbmcgui.Dialog().ok("Nothing found", "Username does not exist. Please try again.")
             return
@@ -905,7 +951,7 @@ def search_actor():
             
             if not data["user"]["user"]["name"] == "":
                 bio += "Name: " + data["user"]["user"]["name"] + "\n"
-            viewers = get_viewers_count(s)
+            viewers = get_viewers_count(s, model_id)
             bio += "Viewers: " + str(viewers) + "\n"
             if not data["user"]["user"]["description"] == "":
                 bio += "Description: " + data["user"]["user"]["description"] + "\n"
