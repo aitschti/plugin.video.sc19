@@ -60,7 +60,8 @@ USER_STATES = {
     'groupShow' : 'group',
     'p2pVoice' : 'p2pV',
     'idle' : 'idle',
-    'off' : 'off'
+    'off' : 'off',
+    'unknown' : '???'
 }
 USER_STATES_NICE = {
     'public' : 'Public',
@@ -70,7 +71,8 @@ USER_STATES_NICE = {
     'groupShow' : 'Group Show',
     'p2pVoice' : 'Peer2Peer Session (VR)',
     'idle' : 'Public Idle',
-    'off' : 'Offline'
+    'off' : 'Offline',
+    'unknown' : 'Unknown'
 }
 
 # Tuples for menu and categories on site
@@ -331,7 +333,7 @@ def get_favourites():
                 data = user_data_dict.get(username)
                 
                 if data and "user" in data:
-                    status = data["user"]["user"]['status']
+                    status = data["user"]["user"].get('status', 'unknown')
                     username_display = get_username_string_from_status(username, status)
                     
                     # Show avatar if not live
@@ -347,7 +349,7 @@ def get_favourites():
                     # Tag info
                     plot = get_tag_string_for_plot(data["user"]["user"])
                     # Status
-                    plot += "Status: " + status + "\n"
+                    plot += "Status: " + get_status_nice(status) + "\n"
                     # Prices
                     plot += get_prices_string_for_plot(data["user"]["user"])
                     # Set plot
@@ -794,7 +796,7 @@ def play_actor(actor, genre="Stripchat"):
         if not data["cam"]["topic"] == "":
             bio = "Topic: " + data["cam"]["topic"] + "\n"
 
-        status = data["user"]["user"]["status"]
+        status = data["user"]["user"].get("status", "unknown")
         isLive = data["user"]["user"]["isLive"]
             
         # Not live (public)
@@ -806,7 +808,7 @@ def play_actor(actor, genre="Stripchat"):
         # All other states
         if not status == "public":
             if status in USER_STATES_NICE:
-                xbmcgui.Dialog().ok(STRINGS['na'], STRINGS['last_status'] + USER_STATES_NICE[status])
+                xbmcgui.Dialog().ok(STRINGS['na'], STRINGS['last_status'] + get_status_nice(status))
             else:
                 xbmcgui.Dialog().ok(STRINGS['na'], STRINGS['unknown_status'] + status)
             xbmc.executebuiltin('Dialog.Close(busydialog)')
@@ -1036,14 +1038,25 @@ def search_actor2(primaryTag=None):
 def get_cam_infos_from_favourites(usernames):
     return    
 
-def get_username_string_from_status(username, status):
+def get_status_nice(status):
+    # Tolerate statuses the site may introduce that we do not know yet
+    if status in USER_STATES_NICE:
+        return USER_STATES_NICE[status]
+    return USER_STATES_NICE['unknown'] + " (" + str(status) + ")"
+
+def get_status_short(status):
+    # Short form for item labels. Statuses we do not know yet keep their raw
+    # value from the JSON data, just trimmed to stay short
     if status in USER_STATES:
-        if status == "public":
-            return username
-        else:
-            return username + " (" + USER_STATES[status] + ")"
-    else:
-        return username + " (???)"
+        return USER_STATES[status]
+    return str(status)[:6]
+
+def get_username_string_from_status(username, status):
+    short = get_status_short(status)
+    # Public has no short form, the plain username is the label
+    if short == "":
+        return username
+    return username + " (" + short + ")"
 
 def get_tag_string_for_plot(item):
     tags = []
@@ -1085,14 +1098,16 @@ def get_cam_infos_as_items(cams):
     id = 0
     
     for item in cams['models']:
-        if not item['status'] == "offfff":
+        status = item.get('status', 'unknown')
+        if not status == "offfff":
             username = item['username']
             
             icon = "https://img.doppiocdn.net/thumbs/{0}/{1}_webp".format(item['snapshotTimestamp'],item['id'])
             url = sys.argv[0] + '?playactor=' + username
             li = xbmcgui.ListItem(username)
             vit = li.getVideoInfoTag()
-            li.setLabel(get_username_string_from_status(username, item['status']))
+            username_display = get_username_string_from_status(username, status)
+            li.setLabel(username_display)
             # previewUrlThumbBig is not available in JSON anymore, use previewUrlThumbSmall instead
             # avaiable: thumb-small, thumb-big, full
             fanart_url = item['previewUrlThumbSmall'].replace('-thumb-small', '-full')
@@ -1102,13 +1117,13 @@ def get_cam_infos_as_items(cams):
             # Tag info
             plot = get_tag_string_for_plot(item)
             # Status
-            plot += "Status: " + USER_STATES_NICE[item['status']] + "\n"
+            plot += "Status: " + get_status_nice(status) + "\n"
             # Prices
             plot += get_prices_string_for_plot(item)
             # Set plot
             vit.setPlot(plot)
             # Set title
-            vit.setTitle(username)
+            vit.setTitle(username_display)
             # Clear playcount for directory items
             vit.setPlaycount(0)
             # Context menu
