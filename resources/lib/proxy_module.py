@@ -43,12 +43,13 @@ def _info(msg: str):
 def _error(msg: str):
     _log(msg, level=globals().get('LOG_ERROR', None))
 
-# Basic headers to forward when fetching original resources
+# HTTP request headers to forward when fetching original resources
 FORWARD_HEADERS = {
-    'Referer': 'https://stripchat.com/',
+    'Referer': 'https://stripchat.com',
     'Origin': 'https://stripchat.com',
     'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.138 Safari/537.36",
-    'Accept': '*/*'
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9'
 }
 
 # API Endpoints
@@ -798,12 +799,8 @@ def get_proxy(port=None):
 
 def _resolve_user_id(username):
     """Resolve a username to its model id. Returns None on failure."""
-    headers = {
-        "Referer": f"https://www.stripchat.com/{username}",
-        "User-Agent": FORWARD_HEADERS["User-Agent"]
-    }
     try:
-        req = urllib.request.Request(API_ENDPOINT_USERID.format(username), headers=headers)
+        req = urllib.request.Request(API_ENDPOINT_USERID.format(username), headers=FORWARD_HEADERS)
         with urllib.request.urlopen(req) as res:
             data = json.load(res)
         user_id = data.get("id") if isinstance(data, dict) else None
@@ -832,14 +829,9 @@ def fetch_stream_url(username):
         return None
 
     api_url = API_ENDPOINT_MODEL_WITH_ID.format(user_id)
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": f"https://www.stripchat.com/{username}",
-        "User-Agent": FORWARD_HEADERS["User-Agent"]
-    }
+    
     try:
-        req = urllib.request.Request(api_url, headers=headers)
+        req = urllib.request.Request(api_url, headers=FORWARD_HEADERS)
         with urllib.request.urlopen(req) as res:
             data = json.load(res)
         if not data or not data.get("cam") or not data.get("user"):

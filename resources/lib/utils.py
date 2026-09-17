@@ -42,14 +42,14 @@ API_ENDPOINT_USERID = "https://stripchat.com/api/front/users/user-ids/{0}"
 # Threading
 MAX_WORKERS = ADDON.getSettingInt('max_workers')
 
-# HTTP request headers
-SITE_URL = "https://stripchat.com"
-SITE_REFFERER = "https://stripchat.com/"
-SITE_ORIGIN = "https://stripchat.com"
-SITE_ACCEPT = "text/html"
-
-# User agent(s)
-USER_AGENT = " Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.138 Safari/537.36"
+# HTTP request headers to forward when fetching original resources
+FORWARD_HEADERS = {
+    'Referer': 'https://stripchat.com',
+    'Origin': 'https://stripchat.com',
+    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.138 Safari/537.36",
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9'
+}
 
 def connect_favourites_db():
     "Connect to favourites database and create one, if it does not exist."
@@ -488,28 +488,9 @@ def update_favourites_user_ids(force=False, show_dialog=True):
         if db_con:
             db_con.close()
 
-def get_site_page_full_old(page):
-    """Fetch HTML data from site"""
-
-    req = urllib.request.Request(page)
-    req.add_header('Referer', SITE_REFFERER)
-    req.add_header('Origin', SITE_ORIGIN)
-    req.add_header('User-Agent', USER_AGENT)
-    req.add_header('Accept', SITE_ACCEPT)
-    
-    response = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-    if response.getcode() != 200:
-        xbmc.log(ADDON_SHORTNAME + ": Request failed with code " + response.getcode())
-    
-    return response.read().decode('utf-8')
-
 def get_data_from_page(page):
     """Fetch HTML data from site"""
-    req = urllib.request.Request(page)
-    req.add_header('Referer', SITE_REFFERER)
-    req.add_header('Origin', SITE_ORIGIN)
-    req.add_header('User-Agent', USER_AGENT)
-    req.add_header('Accept', SITE_ACCEPT)
+    req = urllib.request.Request(page, headers=FORWARD_HEADERS)
 
     try:
         response = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
@@ -555,8 +536,7 @@ def is_image_available(url):
     import urllib.request
     try:
         # Use HEAD request to check without downloading the full image
-        req = urllib.request.Request(url, method='HEAD')
-        req.add_header('User-Agent', USER_AGENT)
+        req = urllib.request.Request(url, method='HEAD', headers=FORWARD_HEADERS)
         with urllib.request.urlopen(req, timeout=2) as response:
             # Check if response is successful and content-type is an image
             return response.status == 200 and 'image' in response.headers.get('Content-Type', '')
