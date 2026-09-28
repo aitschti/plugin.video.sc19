@@ -15,6 +15,9 @@
         <setting id="ctx_show_all_albums" type="bool" default="true" label="Context menu - List restricted albums as well (just for info)"/>
         <setting id="ctx_show_all_videos" type="bool" default="true" label="Context menu - List restricted videos as well (trailer only)"/>
     </category>
+    <category label="Downloads">
+        <setting id="download_path" type="folder" source="files" option="writeable" default="" label="Download path for videos (file manager sources)"/>
+    </category>
     <category label="Stream options">
         <setting id="stream_player" type="enum" values="Default|InputStream FFmpegDirect|InputStream Adaptive" default="2" label="Stream player engine" />
         <setting id="use_variants" type="bool" default="false" label="Use variants (instead of best only quality) playlist" />
