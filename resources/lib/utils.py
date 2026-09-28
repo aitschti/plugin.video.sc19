@@ -1,5 +1,7 @@
 import os
+import re
 import json
+import time
 import xbmc
 import xbmcgui
 import xbmcaddon
@@ -8,6 +10,7 @@ import sqlite3
 import urllib.request
 from urllib.request import Request
 import urllib.error
+import urllib.parse
 from datetime import datetime, timedelta
 
 # Common config constants (avilable in all modules)
@@ -38,6 +41,16 @@ Q_SCHEMA_INFO = "PRAGMA table_info(favourites);"
 # API endpoints
 API_ENDPOINT_BROADCASTS = "https://stripchat.com/api/front/v1/broadcasts/{0}"
 API_ENDPOINT_USERID = "https://stripchat.com/api/front/users/user-ids/{0}"
+API_ENDPOINT_VIDEOS_WITH_ID = "https://stripchat.com/api/front/v2/users/{0}/videos"
+
+# Downloads
+DOWNLOAD_CHUNK_SIZE = 256 * 1024
+# REQUEST_TIMEOUT is a per-socket timeout tuned for small API calls. It never limits the total transfer time.
+DOWNLOAD_TIMEOUT = max(REQUEST_TIMEOUT, 20)
+MAX_FILENAME_LEN = 150
+WIN_RESERVED = {'CON', 'PRN', 'AUX', 'NUL',
+                *('COM%d' % i for i in range(1, 10)),
+                *('LPT%d' % i for i in range(1, 10))}
 
 # Threading
 MAX_WORKERS = ADDON.getSettingInt('max_workers')
@@ -662,5 +675,399 @@ def fetch_model_ids_parallel(usernames, MAX_WORKERS):
                 username = future_to_username[future]
                 xbmc.log(f"{ADDON_SHORTNAME}: Error processing model ID for {username}: {str(e)}", xbmc.LOGWARNING)
                 results[username] = (None, str(e))
-    
+
     return results
+
+def notify(heading, message, error=False):
+    """Show a Kodi notification."""
+
+    xbmcgui.Dialog().notification(
+        heading,
+        message,
+        xbmcgui.NOTIFICATION_ERROR if error else xbmcgui.NOTIFICATION_INFO,
+        6000 if error else 4000)
+
+def is_hls_url(url):
+    """True if the url points to a m3u8 playlist instead of a media file."""
+
+    try:
+        return urllib.parse.urlparse(url).path.lower().endswith('.m3u8')
+    except Exception:
+        return False
+
+def ext_from_url(url):
+    """Return the extension the download should be SAVED as, defaulting to .mp4.
+       A m3u8 playlist becomes .ts, because we concatenate its MPEG-TS segments.
+    """
+
+    if is_hls_url(url):
+        return '.ts'
+    try:
+        path = urllib.parse.urlparse(url).path
+        ext = os.path.splitext(path)[1].lower()
+        if re.fullmatch(r'\.[a-z0-9]{2,4}', ext or ''):
+            return ext
+    except Exception:
+        pass
+    return '.mp4'
+
+def sanitize_filename_part(text, max_len=100):
+    """Make a single filename component safe for NTFS, ext4 and SMB.
+       Unicode is kept on purpose (Kodi paths are utf-8), only
+       dangerous ascii characters are removed.
+    """
+
+    if not text:
+        return ""
+    text = str(text)
+    # Replace control characters with a space, so newlines and tabs do not glue words together
+    text = ''.join(ch if (ord(ch) >= 32 and ord(ch) != 127) else ' ' for ch in text)
+    # Characters forbidden on Windows (and unsafe over SMB from any client)
+    text = re.sub(r'[<>:"/\\|?*]', '', text)
+    # Collapse whitespace runs into single spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    # Windows silently strips trailing dots and spaces, so do it ourselves
+    text = text.rstrip(' .')
+    if len(text) > max_len:
+        text = text[:max_len].rstrip(' .')
+    return text
+
+def build_download_filename(username, title, url, video_id, is_trailer=False, folder=""):
+    """Build the target filename: "<username> - <title>.<ext>"."""
+
+    ext = ext_from_url(url)
+    user = sanitize_filename_part(username, 60) or "unknown"
+    name = sanitize_filename_part(title, 100)
+    if not name:
+        # Title was empty or consisted only of stripped characters
+        name = str(video_id)
+
+    stem = "%s - %s" % (user, name)
+    if is_trailer:
+        stem += " (trailer)"
+
+    # Reserved Windows device names (the " - " normally prevents a match, but be safe)
+    if stem.upper().split('.')[0] in WIN_RESERVED:
+        stem = "_" + stem
+
+    # Keep the whole path within sane limits (255 char component limit, MAX_PATH)
+    budget = min(MAX_FILENAME_LEN, 250 - len(folder) - len(ext) - len(".part"))
+    budget = max(budget, 24)
+    if len(stem) + len(ext) > budget:
+        stem = stem[:budget - len(ext)].rstrip(' .')
+
+    return stem + ext
+
+def join_vfs_path(folder, filename):
+    """Join a folder setting and a filename. Works for local paths and vfs urls."""
+
+    if not folder:
+        return filename
+    folder = xbmcvfs.translatePath(folder)
+    sep = '/' if '://' in folder else os.sep
+    if folder[-1] not in ('/', '\\'):
+        folder += sep
+    return folder + filename
+
+def get_download_folder_or_prompt():
+    """Return the configured download path or open the settings if it is not set."""
+
+    path = ADDON.getSetting('download_path')
+    if not path:
+        xbmcgui.Dialog().ok("Download", "Download path is empty. Please set a valid path in settings menu under \"Downloads\" first.")
+        xbmcaddon.Addon(id=ADDON_NAME).openSettings()
+        return ""
+    return path
+
+class _ProgressBar:
+    """Throttled wrapper around DialogProgressBG. update() is a cross thread gui
+       call, so only push it when the percentage changed or twice a second.
+    """
+
+    def __init__(self, heading, display_name):
+        self.heading = heading
+        self.display_name = display_name
+        self.last_pct = -1
+        self.last_update = 0.0
+        self.bg = xbmcgui.DialogProgressBG()
+        self.bg.create(heading, display_name)
+
+    def update(self, pct, detail):
+        # Round to whole percent first, so the "changed" check actually throttles
+        pct = min(100, max(0, int(pct)))
+        now = time.time()
+        if pct != self.last_pct or now - self.last_update > 0.5:
+            self.bg.update(pct, self.heading, "%s  %s" % (self.display_name, detail))
+            self.last_pct = pct
+            self.last_update = now
+
+    def close(self):
+        try:
+            self.bg.close()
+        except Exception:
+            pass
+
+def get_playlist_text(url):
+    """Fetch a m3u8 playlist as text."""
+
+    req = urllib.request.Request(url, headers=FORWARD_HEADERS)
+    response = urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT)
+    try:
+        return response.read().decode('utf-8', 'replace')
+    finally:
+        response.close()
+
+def resolve_hls_segments(url, _depth=0):
+    """Resolve a m3u8 url into (segments, init_url), where segments is a list of
+       (segment_url, duration). Raise IOError for playlists we cannot concatenate byte for byte.
+    """
+
+    if _depth > 3:
+        raise IOError("Too many nested playlists")
+
+    lines = [l.strip() for l in get_playlist_text(url).splitlines() if l.strip()]
+    if not lines or not lines[0].startswith('#EXTM3U'):
+        raise IOError("Not a valid m3u8 playlist")
+
+    # Master playlist: follow the best variant
+    if any(l.startswith('#EXT-X-STREAM-INF') for l in lines):
+        best_uri = None
+        best_bandwidth = -1
+        for index, line in enumerate(lines):
+            if not line.startswith('#EXT-X-STREAM-INF'):
+                continue
+            match = re.search(r'BANDWIDTH=(\d+)', line)
+            bandwidth = int(match.group(1)) if match else 0
+            uri = next((l for l in lines[index + 1:] if not l.startswith('#')), None)
+            if uri and bandwidth > best_bandwidth:
+                best_uri = uri
+                best_bandwidth = bandwidth
+        if not best_uri:
+            raise IOError("No variant stream found in master playlist")
+        return resolve_hls_segments(urllib.parse.urljoin(url, best_uri), _depth + 1)
+
+    # Media playlist. Bail out on anything a plain concatenation would get wrong.
+    for line in lines:
+        if line.startswith('#EXT-X-KEY') and 'METHOD=NONE' not in line:
+            raise IOError("This video is an encrypted HLS stream and cannot be downloaded")
+        if line.startswith('#EXT-X-BYTERANGE'):
+            raise IOError("This video uses byte range segments, which are not supported")
+
+    init_url = None
+    segments = []
+    duration = 0.0
+    for line in lines:
+        if line.startswith('#EXT-X-MAP'):
+            match = re.search(r'URI="([^"]+)"', line)
+            if match:
+                init_url = urllib.parse.urljoin(url, match.group(1))
+        elif line.startswith('#EXTINF'):
+            try:
+                duration = float(line.split(':', 1)[1].split(',')[0])
+            except (ValueError, IndexError):
+                duration = 0.0
+        elif not line.startswith('#'):
+            segments.append((urllib.parse.urljoin(url, line), duration))
+            duration = 0.0
+
+    if not segments:
+        raise IOError("No segments found in playlist")
+    return segments, init_url
+
+def _stream_url_to_file(url, file_handle, monitor, on_progress=None):
+    """Stream one url into an already open file handle.
+       on_progress(bytes_done_in_this_url, content_length_or_0) is called per chunk.
+       Returns the number of bytes written.
+    """
+
+    req = urllib.request.Request(url, headers=FORWARD_HEADERS)
+    response = urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT)
+    try:
+        total = int(response.headers.get('Content-Length') or 0)
+        done = 0
+        while True:
+            if monitor.abortRequested():
+                raise IOError("Kodi is shutting down")
+            chunk = response.read(DOWNLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            # write() returns False on a full disk or a dropped share, it does not raise
+            if file_handle.write(bytearray(chunk)) is False:
+                raise IOError("Write failed (disk full or share disconnected?)")
+            done += len(chunk)
+            if on_progress:
+                on_progress(done, total)
+
+        if total > 0 and done < total:
+            raise IOError("Incomplete download (%d of %d bytes)" % (done, total))
+        return done
+    finally:
+        response.close()
+
+def _download_direct(url, file_handle, monitor, bar):
+    """Download a plain media file (mp4)."""
+
+    def on_progress(done, total):
+        if total > 0:
+            bar.update(done * 100.0 / total,
+                       "%.1f / %.1f MB" % (done / 1048576.0, total / 1048576.0))
+        else:
+            # Without a Content-Length there is nothing honest to show but the counter
+            bar.update(0, "%.1f MB" % (done / 1048576.0))
+
+    return _stream_url_to_file(url, file_handle, monitor, on_progress)
+
+def _download_hls(url, file_handle, monitor, bar):
+    """Download an (unencrypted) HLS VOD playlist by concatenating its segments. 
+    MPEG-TS segments can simply be appended."""
+
+    segments, init_url = resolve_hls_segments(url)
+    total_duration = sum(duration for _, duration in segments)
+    count = len(segments)
+    xbmc.log(ADDON_SHORTNAME + ": HLS download, %d segments, %.1f s total" % (count, total_duration), 1)
+
+    written = 0
+    done_duration = 0.0
+
+    # A fragmented mp4 playlist needs its init segment first
+    if init_url:
+        written += _stream_url_to_file(init_url, file_handle, monitor)
+
+    for index, (segment_url, duration) in enumerate(segments):
+        if monitor.abortRequested():
+            raise IOError("Kodi is shutting down")
+
+        def on_progress(done, total, _index=index, _duration=duration):
+            # Weight by playtime so the bar moves smoothly even with few large segments
+            if total_duration > 0:
+                fraction = (done / float(total)) if total > 0 else 0.0
+                pct = (done_duration + fraction * _duration) / total_duration * 100.0
+            else:
+                pct = _index * 100.0 / count
+            bar.update(pct, "segment %d/%d  %.1f MB" % (_index + 1, count, (written + done) / 1048576.0))
+
+        written += _stream_url_to_file(segment_url, file_handle, monitor, on_progress)
+        done_duration += duration
+
+    return written
+
+def _finalize_download(part_path, dest_path):
+    """Move the finished part file onto the destination."""
+
+    # rename does not overwrite an existing destination, so clear it first
+    if xbmcvfs.exists(dest_path):
+        xbmcvfs.delete(dest_path)
+    if not xbmcvfs.rename(part_path, dest_path):
+        if xbmcvfs.copy(part_path, dest_path):
+            xbmcvfs.delete(part_path)
+            xbmc.log(ADDON_SHORTNAME + ": Rename failed, used copy fallback for " + dest_path, xbmc.LOGWARNING)
+        else:
+            raise IOError("Could not move the finished file into place")
+
+def download_file_with_progress(url, dest_path, heading, display_name):
+    """Download url to dest_path showing a background progress bar. Handles both
+       plain media files and unencrypted HLS VOD playlists (concatenated to .ts).
+       Writes to a .part file and renames on success, so an interrupted
+       download never looks like a finished one.
+       Returns a tuple (ok, message).
+    """
+
+    part_path = dest_path + ".part"
+
+    # Guard before the try block: the cleanup path below deletes the part file, so
+    # bailing out from inside would kill the download that is already running.
+    if xbmcvfs.exists(part_path):
+        return False, "A download for this file seems to be running already."
+
+    monitor = xbmc.Monitor()
+    bar = _ProgressBar(heading, display_name)
+    file_handle = None
+
+    try:
+        file_handle = xbmcvfs.File(part_path, 'w')
+
+        if is_hls_url(url):
+            written = _download_hls(url, file_handle, monitor, bar)
+        else:
+            written = _download_direct(url, file_handle, monitor, bar)
+
+        file_handle.close()
+        file_handle = None
+
+        _finalize_download(part_path, dest_path)
+
+        bar.close()
+        xbmc.log(ADDON_SHORTNAME + ": Downloaded %s (%d bytes)" % (dest_path, written), 1)
+        return True, dest_path
+
+    except Exception as e:
+        xbmc.log(ADDON_SHORTNAME + ": Download failed for %s: %s" % (url, str(e)), xbmc.LOGERROR)
+        # Close the handle before deleting, removing an open file fails on Windows
+        try:
+            if file_handle:
+                file_handle.close()
+        except Exception:
+            pass
+        try:
+            if xbmcvfs.exists(part_path):
+                xbmcvfs.delete(part_path)
+        except Exception:
+            pass
+        bar.close()
+        return False, str(e)
+
+def ctx_download_profile_video(model_id, username, video_id, kind="video"):
+    """Download a profile video (or the trailer of a restricted one) to the
+       configured download folder. Called from the context menu via RunScript.
+    """
+
+    is_trailer = (kind == "trailer")
+    heading = ADDON_SHORTNAME + (" - Downloading trailer" if is_trailer else " - Downloading video")
+
+    folder = get_download_folder_or_prompt()
+    if not folder:
+        return
+
+    # Resolve a fresh url, listing time urls may already have expired
+    try:
+        if not model_id:
+            model_id, model_err = get_model_id_for_user(username)
+            if not model_id:
+                raise IOError(model_err or "Could not resolve user id for " + username)
+
+        data = json.loads(get_data_from_page(API_ENDPOINT_VIDEOS_WITH_ID.format(model_id)))
+        item = next((v for v in data.get('videos', []) if str(v.get('id')) == str(video_id)), None)
+        if not item:
+            raise IOError("Video is no longer available")
+
+        url = item.get('trailerUrl') if is_trailer else item.get('videoUrl')
+        title = item.get('title') or ""
+        if not url:
+            raise IOError("No download url for this video")
+    except Exception as e:
+        xbmc.log(ADDON_SHORTNAME + ": Download lookup failed for %s/%s: %s" % (username, video_id, str(e)), xbmc.LOGERROR)
+        notify("Download failed", str(e), error=True)
+        return
+
+    try:
+        if not xbmcvfs.exists(folder):
+            xbmcvfs.mkdirs(folder)
+    except Exception as e:
+        xbmc.log(ADDON_SHORTNAME + ": Could not create download folder %s: %s" % (folder, str(e)), xbmc.LOGWARNING)
+
+    filename = build_download_filename(username, title, url, video_id, is_trailer, folder)
+    destination = join_vfs_path(folder, filename)
+
+    # Ask before anything is transferred
+    if xbmcvfs.exists(destination):
+        if not xbmcgui.Dialog().yesno("Download",
+                                      "This file already exists:\n%s\n\nOverwrite it?" % filename,
+                                      yeslabel="Overwrite", nolabel="Skip"):
+            notify("Download", "Skipped: " + filename)
+            return
+
+    ok, message = download_file_with_progress(url, destination, heading, filename)
+    if ok:
+        notify("Download finished", filename)
+    else:
+        notify("Download failed", message, error=True)

@@ -665,20 +665,24 @@ def get_videos(actor):
                         
                     vit.setDuration(item['duration'])
                     vit.setPlot("Restricted video: This is just a (shorter) trailer in lower quality.")
+                    li.addContextMenuItems(get_ctx_for_video_item(model_id, actor, item['id'], True))
                     url = sys.argv[0] + '?playurl=' + item['trailerUrl']  + "&title=" + actor + " - " + item['title']
                     items.append((url, li, False))
-                    
-                else:        
+
+                else:
                     li.setLabel(item['title'])
                     vit.setDuration(item['duration'])
+                    li.addContextMenuItems(get_ctx_for_video_item(model_id, actor, item['id'], False))
                     url = sys.argv[0] + '?playurl=' + item['videoUrl']  + "&title=" + actor + " - " + item['title']
                     items.append((url, li, False))
                 
             else:
                 if item['accessMode'] == 'free':
                     li.setLabel(item['title'])
-                    vit.setPlot("Duration in seconds: " + str(item['duration']))                    
-                    url = sys.argv[0] + '?playurl=' + item['videoUrl']
+                    vit.setPlot("Duration in seconds: " + str(item['duration']))
+                    li.addContextMenuItems(get_ctx_for_video_item(model_id, actor, item['id'], False))
+                    # The title part is mandatory, evaluate_request() always expects it
+                    url = sys.argv[0] + '?playurl=' + item['videoUrl']  + "&title=" + actor + " - " + item['title']
                     items.append((url, li, False))
         
         xbmcplugin.setContent(int(sys.argv[1]), 'videos')
@@ -1144,6 +1148,16 @@ def get_ctx_for_cam_item(username, remove=False):
     commands.append(('Show profile albums',"Container.Update(%s?%s)" % ( sys.argv[0],  "getalbums=" + username)))
     commands.append(('Show profile videos',"Container.Update(%s?%s)" % ( sys.argv[0],  "getvideos=" + username)))
     return commands
+
+def get_ctx_for_video_item(model_id, username, video_id, is_trailer=False):
+    """Context menu for a profile video item."""
+    quote = lambda value: urllib.parse.quote(str(value), safe='')
+    label = ('[COLOR orange]' + ADDON_SHORTNAME +
+             (' - Download trailer [/COLOR]' if is_trailer else ' - Download video [/COLOR]'))
+    action = ('RunScript(' + ADDON_NAME + ', ' + str(sys.argv[1]) + ', ctx_download_video, '
+              + quote(model_id) + ', ' + quote(username) + ', ' + quote(video_id) + ', '
+              + ('trailer' if is_trailer else 'video') + ')')
+    return [(label, action)]
 
 def get_icon_from_status(status):
     icon = "DefaultVideo.png"

@@ -1,5 +1,6 @@
 import sys
 import sqlite3
+import urllib.parse
 import xbmc
 import xbmcaddon
 import utils as sc19
@@ -54,3 +55,14 @@ if sys.argv[2]:
     if cmd == "ctx_thumbnails_delete":
         sc19.tool_thumbnails_delete_from_db()
         xbmc.executebuiltin("Container.Refresh")
+    if cmd == "ctx_download_video":
+        # Arguments are percent encoded by the caller, see get_ctx_for_video_item()
+        if len(sys.argv) >= 7:
+            sc19.ctx_download_profile_video(
+                urllib.parse.unquote(sys.argv[3]),   # model id
+                urllib.parse.unquote(sys.argv[4]),   # username
+                urllib.parse.unquote(sys.argv[5]),   # video id
+                urllib.parse.unquote(sys.argv[6])    # "video" or "trailer"
+            )
+        else:
+            xbmc.log(ADDON_NAME + ": ctx_download_video called with too few args: %s" % (sys.argv,), xbmc.LOGERROR)
