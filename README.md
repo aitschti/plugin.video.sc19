@@ -13,6 +13,7 @@ Tested on Android (Fire TV), Windows and MacOS, should work fine with other Linu
 - Favourites list (with backup/restore function. **Set path in settings first!**)
 - Check online state of favourite cams before listing them (with progress bar, takes some time, can be disabled in settings)
 - View profile details of performer (Use context menu > videos and albums)
+- Download profile videos and trailers (set a download path in settings)
 - Shows cam states of performer (idle, private etc.)
 - When streaming a cam use info button for additional info about the room like topic, goal, viewers etc. (if available)
 - Option to use my external standalone proxy solution for decoding (<https://github.com/aitschti/scp-standalone>)
